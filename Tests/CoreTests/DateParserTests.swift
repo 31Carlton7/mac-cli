@@ -68,4 +68,8 @@ final class DateParserTests: XCTestCase {
         let expected = ny.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 10))!
         XCTAssertEqual(DateParser.parse("+7d", now: start, calendar: ny), expected)
     }
+
+    func testHugeDayOffsetDoesNotCrash() {
+        XCTAssertNotNil(parse("+1e30d"))
+    }
 }

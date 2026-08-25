@@ -48,9 +48,9 @@ public enum DateParser {
         switch s.last {
         case "d":
             // Calendar-day arithmetic keeps "+7d" at the same wall-clock time across
-            // DST transitions; fall back to elapsed time for fractional days.
-            if value == value.rounded() {
-                return calendar.date(byAdding: .day, value: Int(value), to: now)
+            // DST transitions; fall back to elapsed time for fractional or huge values.
+            if value == value.rounded(), let days = Int(exactly: value) {
+                return calendar.date(byAdding: .day, value: days, to: now)
             }
             return now.addingTimeInterval(value * 86_400)
         case "h": return now.addingTimeInterval(value * 3_600)
