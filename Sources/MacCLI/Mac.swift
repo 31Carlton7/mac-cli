@@ -1,5 +1,6 @@
 import ArgumentParser
 import CalendarModule
+import RemindersModule
 
 @main
 struct Mac: AsyncParsableCommand {
@@ -7,6 +8,6 @@ struct Mac: AsyncParsableCommand {
         commandName: "mac",
         abstract: "Agent-friendly CLI for native macOS apps (Calendar, Reminders, Contacts).",
         version: "0.1.0",
-        subcommands: [CalendarCommand.self]
+        subcommands: [CalendarCommand.self, RemindersCommand.self]
     )
 }
