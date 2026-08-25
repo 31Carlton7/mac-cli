@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>co.charmtechnologies.mac-cli</string>
+    <key>CFBundleName</key>
+    <string>mac</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>mac-cli reads and writes calendar events on your behalf.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>mac-cli reads and writes reminders on your behalf.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>mac-cli reads and writes contacts on your behalf.</string>
+</dict>
+</plist>
