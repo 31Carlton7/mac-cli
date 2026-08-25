@@ -122,6 +122,15 @@ final class ReminderActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testEditEmptyTitleThrowsBadInput() async {
+        do {
+            _ = try await actions.edit(id: "rem-1", title: " ", due: nil, notes: nil, priority: nil)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
+    }
+
     func testDeleteUnknownIDThrowsNotFound() async {
         do {
             try await actions.delete(id: "nope")

@@ -50,6 +50,9 @@ public struct CalendarActions {
     public func edit(id: String, title: String?, at: String?, duration: String?,
                      location: String?, notes: String?) async throws -> EventItem {
         try await store.requestAccess()
+        if let title, title.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw MacError(.badInput, "Event title cannot be empty.")
+        }
         var patch = EventPatch()
         patch.title = title
         patch.start = try at.map { try resolve($0, flag: "--at") }

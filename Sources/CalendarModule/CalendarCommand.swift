@@ -51,7 +51,7 @@ public struct CalendarCommand: AsyncParsableCommand {
                 let item = try await CalendarActions(store: EventKitCalendarStore())
                     .add(title: title, at: at, duration: duration, calendarName: calendar,
                          location: location, notes: notes, allDay: allDay)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }
@@ -75,7 +75,7 @@ public struct CalendarCommand: AsyncParsableCommand {
                 let item = try await CalendarActions(store: EventKitCalendarStore())
                     .edit(id: id, title: title, at: at, duration: duration,
                           location: location, notes: notes)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }

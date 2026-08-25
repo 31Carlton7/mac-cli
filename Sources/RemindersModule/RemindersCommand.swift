@@ -50,7 +50,7 @@ public struct RemindersCommand: AsyncParsableCommand {
             await withErrorHandling(json: output.json) {
                 let item = try await ReminderActions(store: EventKitReminderStore())
                     .add(title: title, listName: list, due: due, notes: notes, priority: priority)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }
@@ -64,7 +64,7 @@ public struct RemindersCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 let item = try await ReminderActions(store: EventKitReminderStore()).complete(id: id)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }
@@ -83,7 +83,7 @@ public struct RemindersCommand: AsyncParsableCommand {
             await withErrorHandling(json: output.json) {
                 let item = try await ReminderActions(store: EventKitReminderStore())
                     .edit(id: id, title: title, due: due, notes: notes, priority: priority)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }

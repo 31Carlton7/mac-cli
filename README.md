@@ -38,6 +38,8 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Exit codes: `0` success, `1` not found / bad input, `2` permission denied.
 - Mutations (`edit`, `delete`, `complete`) take exact IDs only — get IDs from `list`/`find`.
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
+- Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
+- `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
 
 ## Known limitations (v1)
 
@@ -45,6 +47,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **Date-only due dates** get a time of midnight — every reminder due date carries a time.
 - **Duplicate calendar/list names** (e.g. "Personal" in two accounts) resolve to the first match.
 - Contact phone/email labels (mobile/work/home) are flattened to plain values.
+- **No clear-to-nil:** edit flags replace values. A due date, once set, cannot be removed; notes/location/org can be blanked by passing an empty string. Names and titles cannot be set to empty.
 
 ## Roadmap
 

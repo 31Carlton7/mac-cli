@@ -37,6 +37,9 @@ public struct ContactActions {
     public func edit(id: String, name: String?, phone: String?, email: String?,
                      organization: String?) async throws -> ContactItem {
         try await store.requestAccess()
+        if let name, name.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw MacError(.badInput, "Contact name cannot be empty.")
+        }
         var patch = ContactPatch()
         patch.name = name
         patch.addPhone = phone

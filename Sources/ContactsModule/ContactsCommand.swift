@@ -58,7 +58,7 @@ public struct ContactsCommand: AsyncParsableCommand {
             await withErrorHandling(json: output.json) {
                 let item = try await ContactActions(store: CNContactStoreAdapter())
                     .add(name: name, phone: phone, email: email, organization: organization)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }
@@ -80,7 +80,7 @@ public struct ContactsCommand: AsyncParsableCommand {
             await withErrorHandling(json: output.json) {
                 let item = try await ContactActions(store: CNContactStoreAdapter())
                     .edit(id: id, name: name, phone: phone, email: email, organization: organization)
-                if !output.quiet { Output.emit(item, json: output.json) }
+                if output.json || !output.quiet { Output.emit(item, json: output.json) }
             }
         }
     }

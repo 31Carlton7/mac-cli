@@ -108,6 +108,16 @@ final class CalendarActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testEditEmptyTitleThrowsBadInput() async {
+        do {
+            _ = try await actions.edit(id: "evt-1", title: "", at: nil, duration: nil,
+                                       location: nil, notes: nil)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
+    }
+
     func testDeleteUnknownIDThrowsNotFound() async {
         do {
             try await actions.delete(id: "nope")

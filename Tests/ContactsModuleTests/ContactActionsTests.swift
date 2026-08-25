@@ -95,6 +95,15 @@ final class ContactActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testEditEmptyNameThrowsBadInput() async {
+        do {
+            _ = try await actions.edit(id: "con-1", name: "  ", phone: nil, email: nil, organization: nil)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
+    }
+
     func testShowUnknownIDThrowsNotFound() async {
         do {
             _ = try await actions.show(id: "nope")

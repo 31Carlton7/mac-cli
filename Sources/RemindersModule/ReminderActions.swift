@@ -40,6 +40,9 @@ public struct ReminderActions {
     public func edit(id: String, title: String?, due: String?, notes: String?,
                      priority: ReminderPriority?) async throws -> ReminderItem {
         try await store.requestAccess()
+        if let title, title.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw MacError(.badInput, "Reminder title cannot be empty.")
+        }
         var patch = ReminderPatch()
         patch.title = title
         patch.due = try due.map { try resolve($0, flag: "--due") }
