@@ -5,6 +5,7 @@ import Core
 final class MockCalendarStore: CalendarStore {
     var accessGranted = true
     var storedEvents: [EventItem] = []
+    var knownCalendars = ["Default"]
 
     func requestAccess() async throws {
         if !accessGranted { throw MacError(.permissionDenied, "Calendar access not granted. Run: mac doctor") }
@@ -14,13 +15,21 @@ final class MockCalendarStore: CalendarStore {
         [CalendarInfo(id: "cal-1", title: "Default", kind: "event")]
     }
 
+    private func validate(_ calendarName: String?) throws {
+        if let name = calendarName, !knownCalendars.contains(name) {
+            throw MacError(.notFound, "No calendar named '\(name)'. Run: mac calendar calendars")
+        }
+    }
+
     func events(from: Date, to: Date, calendarName: String?) async throws -> [EventItem] {
-        storedEvents.filter {
+        try validate(calendarName)
+        return storedEvents.filter {
             $0.start >= from && $0.start < to && (calendarName == nil || $0.calendar == calendarName)
         }
     }
 
     func addEvent(_ draft: EventDraft) async throws -> EventItem {
+        try validate(draft.calendarName)
         let item = EventItem(id: "evt-\(storedEvents.count + 1)", title: draft.title,
                              start: draft.start, end: draft.end,
                              calendar: draft.calendarName ?? "Default",
@@ -115,6 +124,16 @@ final class CalendarActionsTests: XCTestCase {
             XCTFail("expected permissionDenied")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .permissionDenied)
+        } catch { XCTFail("wrong error type") }
+    }
+
+    func testUnknownCalendarNameThrowsNotFound() async {
+        do {
+            _ = try await actions.add(title: "x", at: "tomorrow 9am", duration: nil, calendarName: "Bogus",
+                                      location: nil, notes: nil, allDay: false)
+            XCTFail("expected notFound")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .notFound)
         } catch { XCTFail("wrong error type") }
     }
 }

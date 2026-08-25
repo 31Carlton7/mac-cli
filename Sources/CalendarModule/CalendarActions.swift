@@ -27,9 +27,15 @@ public struct CalendarActions {
         let start = try resolve(at, flag: "--at")
         let seconds = try duration.map(parseDuration) ?? 3_600
         let realStart = allDay ? calendar.startOfDay(for: start) : start
-        let end = allDay
-            ? calendar.date(byAdding: .day, value: 1, to: realStart)!
-            : realStart.addingTimeInterval(seconds)
+        let end: Date
+        if allDay {
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: realStart) else {
+                throw MacError(.badInput, "Could not compute all-day event end for '\(at)'.")
+            }
+            end = nextDay
+        } else {
+            end = realStart.addingTimeInterval(seconds)
+        }
         let draft = EventDraft(title: title, start: realStart, end: end, calendarName: calendarName,
                                location: location, notes: notes, isAllDay: allDay)
         return try await store.addEvent(draft)
