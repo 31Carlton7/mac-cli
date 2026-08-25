@@ -8,7 +8,7 @@ public enum DateParser {
         let s = input.trimmingCharacters(in: .whitespaces).lowercased()
         guard !s.isEmpty else { return nil }
 
-        if s.hasPrefix("+") { return offset(s, from: now) }
+        if s.hasPrefix("+") { return offset(s, from: now, calendar: calendar) }
         if let d = formatter("yyyy-MM-dd HH:mm", calendar).date(from: s) { return d }
         if let d = formatter("yyyy-MM-dd", calendar).date(from: s) { return d }
 
@@ -43,10 +43,16 @@ public enum DateParser {
         return f
     }
 
-    static func offset(_ s: String, from now: Date) -> Date? {
+    static func offset(_ s: String, from now: Date, calendar: Calendar) -> Date? {
         guard s.count >= 3, let value = Double(s.dropFirst().dropLast()) else { return nil }
         switch s.last {
-        case "d": return now.addingTimeInterval(value * 86_400)
+        case "d":
+            // Calendar-day arithmetic keeps "+7d" at the same wall-clock time across
+            // DST transitions; fall back to elapsed time for fractional days.
+            if value == value.rounded() {
+                return calendar.date(byAdding: .day, value: Int(value), to: now)
+            }
+            return now.addingTimeInterval(value * 86_400)
         case "h": return now.addingTimeInterval(value * 3_600)
         case "m": return now.addingTimeInterval(value * 60)
         default: return nil

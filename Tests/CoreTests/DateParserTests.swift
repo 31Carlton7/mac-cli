@@ -59,4 +59,13 @@ final class DateParserTests: XCTestCase {
         XCTAssertNil(DurationParser.parse("banana"))
         XCTAssertNil(DurationParser.parse("90"))
     }
+
+    func testDayOffsetIsDSTCorrect() {
+        var ny = Calendar(identifier: .gregorian)
+        ny.timeZone = TimeZone(identifier: "America/New_York")!
+        // 2026-03-01 10:00 EST; +7d crosses the US DST spring-forward on 2026-03-08.
+        let start = ny.date(from: DateComponents(year: 2026, month: 3, day: 1, hour: 10))!
+        let expected = ny.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 10))!
+        XCTAssertEqual(DateParser.parse("+7d", now: start, calendar: ny), expected)
+    }
 }
