@@ -15,4 +15,11 @@ final class MacErrorTests: XCTestCase {
             #"{"error":{"code":"permissionDenied","message":"Calendar access not granted. Run: mac doctor"}}"# + "\n"
         )
     }
+
+    func testInternalJSONShape() {
+        XCTAssertEqual(
+            MacError.internalJSONString("boom"),
+            #"{"error":{"code":"internal","message":"boom"}}"# + "\n"
+        )
+    }
 }

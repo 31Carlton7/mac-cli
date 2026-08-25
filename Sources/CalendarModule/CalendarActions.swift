@@ -17,6 +17,12 @@ public struct CalendarActions {
         try await store.requestAccess()
         let fromDate = try resolve(from ?? "today", flag: "--from")
         let toDate = try resolve(to ?? "+7d", flag: "--to")
+        guard toDate > fromDate else {
+            throw MacError(.badInput, "--to must be after --from.")
+        }
+        guard toDate.timeIntervalSince(fromDate) <= 4 * 365 * 86_400 else {
+            throw MacError(.badInput, "Date window too large — EventKit limits event queries to 4 years. Narrow --from/--to.")
+        }
         let items = try await store.events(from: fromDate, to: toDate, calendarName: calendarName)
         return items.sorted { $0.start < $1.start }
     }

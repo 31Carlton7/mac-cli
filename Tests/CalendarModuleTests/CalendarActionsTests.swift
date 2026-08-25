@@ -136,4 +136,22 @@ final class CalendarActionsTests: XCTestCase {
             XCTAssertEqual(error.code, .notFound)
         } catch { XCTFail("wrong error type") }
     }
+
+    func testReversedWindowThrowsBadInput() async {
+        do {
+            _ = try await actions.list(from: "+2d", to: "today", calendarName: nil)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
+    }
+
+    func testHugeWindowThrowsBadInput() async {
+        do {
+            _ = try await actions.list(from: "2020-01-01", to: "2030-01-01", calendarName: nil)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
+    }
 }
