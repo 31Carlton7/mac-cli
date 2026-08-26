@@ -1,3 +1,4 @@
+import ApplicationServices
 import ArgumentParser
 import Contacts
 import Core
@@ -23,6 +24,11 @@ struct DoctorCommand: AsyncParsableCommand {
             CapabilityStatus(capability: "contacts",
                              status: Self.contactsState(),
                              pane: "Contacts"),
+            Self.automationRow("automation:Mail", app: "Mail",
+                               bundleID: "com.apple.mail", commandHint: "mail"),
+            Self.automationRow("automation:Messages", app: "Messages",
+                               bundleID: "com.apple.MobileSMS", commandHint: "messages"),
+            Self.fullDiskAccessRow(),
         ], json: output.json)
     }
 
@@ -41,5 +47,29 @@ struct DoctorCommand: AsyncParsableCommand {
         case .notDetermined: .notRequested
         default: .denied
         }
+    }
+
+    static func automationRow(_ label: String, app: String, bundleID: String,
+                              commandHint: String) -> CapabilityStatus {
+        let target = NSAppleEventDescriptor(bundleIdentifier: bundleID)
+        let status = AEDeterminePermissionToAutomateTarget(target.aeDesc, typeWildCard, typeWildCard, false)
+        let state = PermissionProbes.automationState(fromStatus: status)
+        let fix: String? = switch state {
+        case .granted:
+            nil
+        case .notRequested:
+            "Run any `mac \(commandHint)` command to trigger the consent prompt."
+        default:
+            "Enable \(app) under System Settings > Privacy & Security > Automation for your terminal app."
+        }
+        return CapabilityStatus(capability: label, status: state, fixOverride: fix)
+    }
+
+    static func fullDiskAccessRow() -> CapabilityStatus {
+        let path = NSHomeDirectory() + "/Library/Messages/chat.db"
+        let state = PermissionProbes.fullDiskAccessState(probing: path)
+        let fix = state == .granted ? nil
+            : "Grant Full Disk Access to your terminal app in System Settings > Privacy & Security > Full Disk Access (required to read Messages history)."
+        return CapabilityStatus(capability: "fullDiskAccess", status: state, fixOverride: fix)
     }
 }

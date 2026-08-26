@@ -22,6 +22,13 @@ public struct CapabilityStatus: Codable, Equatable, HumanRenderable {
         }
     }
 
+    /// For capabilities whose fix text doesn't follow the pane template.
+    public init(capability: String, status: AuthState, fixOverride: String?) {
+        self.capability = capability
+        self.status = status
+        self.fix = fixOverride
+    }
+
     public var humanLine: String {
         "\(capability): \(status.rawValue)" + (fix.map { "  — \($0)" } ?? "")
     }
