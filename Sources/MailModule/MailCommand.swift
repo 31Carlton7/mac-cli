@@ -158,12 +158,21 @@ public struct MailCommand: AsyncParsableCommand {
 
         @OptionGroup var output: OutputOptions
 
+        /// A bare string array, unlike the `{id,title,kind}` objects from
+        /// `calendar calendars` / `reminders lists`. Those have stable identifiers
+        /// distinct from their titles; a Mail account's name IS its identifier —
+        /// it's exactly what `--account` accepts — so there's no id/title
+        /// distinction to model. Order is Mail's own; we don't sort.
+        static func accountsJSON(_ names: [String]) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: names)
+            return String(data: data, encoding: .utf8)!
+        }
+
         func run() async {
             await withErrorHandling(json: output.json) {
                 let names = try await MailActions(store: AppleScriptMailStore()).accounts()
                 if output.json {
-                    let data = try! JSONSerialization.data(withJSONObject: names, options: [.sortedKeys])
-                    print(String(data: data, encoding: .utf8)!)
+                    print(Self.accountsJSON(names))
                 } else if !names.isEmpty {
                     print(names.joined(separator: "\n"))
                 }

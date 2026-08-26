@@ -23,7 +23,10 @@ final class MockMailStore: MailStore {
 
     func unread(account: String?, limit: Int) async throws -> [EmailItem] {
         try gate()
-        return emails.filter { !$0.isRead && (account == nil || $0.account == account) }.prefix(limit).map { $0 }
+        // Case-insensitive to match the AppleScript comparison in MailScripts.unread.
+        return emails.filter {
+            !$0.isRead && (account == nil || $0.account.caseInsensitiveCompare(account!) == .orderedSame)
+        }.prefix(limit).map { $0 }
     }
 
     func search(_ query: String, limit: Int) async throws -> [EmailItem] {
@@ -119,6 +122,14 @@ final class MailActionsTests: XCTestCase {
     func testKnownAccountPasses() async throws {
         store.emails = [email("1")]
         let items = try await actions.unread(account: "Work", limit: 20)
+        XCTAssertEqual(items.map(\.id), ["1"])
+    }
+
+    func testAccountGuardIsCaseInsensitiveLikeMail() async throws {
+        // MailScripts.unread compares account names in AppleScript, which is
+        // case-insensitive — the guard must not be stricter than the filter.
+        store.emails = [email("1")]
+        let items = try await actions.unread(account: "work", limit: 20)
         XCTAssertEqual(items.map(\.id), ["1"])
     }
 

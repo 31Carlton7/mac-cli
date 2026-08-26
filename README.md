@@ -45,6 +45,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `--json` on every command; sorted keys, ISO 8601 dates; schemas are stable.
 - Exit codes: `0` success, `1` not found / bad input, `2` permission denied.
 - Mutations (`edit`, `delete`, `complete`, `mark-read`, `archive`) take exact IDs only — get IDs from `list`/`find`.
+- Discovery commands: `mac calendar calendars` and `mac reminders lists` return objects (`{id,title,kind}`); `mac mail accounts` returns a plain string array, since a Mail account's name is its identifier.
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.

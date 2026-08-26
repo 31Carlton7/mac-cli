@@ -10,6 +10,20 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["accounts", "--json"]))
     }
 
+    // MARK: - `accounts --json` output contract
+
+    func testAccountsJSONShapeIsBareStringArray() {
+        XCTAssertEqual(MailCommand.Accounts.accountsJSON(["Work", "Personal"]),
+                       #"["Work","Personal"]"#)
+    }
+
+    func testAccountsJSONPreservesStoreOrderAndEscapes() {
+        // Mail's own order is the contract — no sorting — and a name containing a
+        // quote must not corrupt the array.
+        XCTAssertEqual(MailCommand.Accounts.accountsJSON([]), "[]")
+        XCTAssertEqual(MailCommand.Accounts.accountsJSON([#"Wo"rk"#]), #"["Wo\"rk"]"#)
+    }
+
     func testDraftRequiresTo() {
         XCTAssertThrowsError(try MailCommand.parseAsRoot(["draft", "--subject", "hi"]))
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["draft", "--to", "a@b.com", "--subject", "hi"]))

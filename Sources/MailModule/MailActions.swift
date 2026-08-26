@@ -20,10 +20,12 @@ public struct MailActions {
     public func unread(account: String?, limit: Int) async throws -> [EmailItem] {
         try validate(limit: limit)
         // An unrecognised account would otherwise filter to nothing and read as
-        // a confidently empty inbox.
+        // a confidently empty inbox. Matched case-insensitively because that's how
+        // MailScripts.unread's own AppleScript comparison behaves — a stricter
+        // guard would reject names the filter would have matched.
         if let account {
             let known = try await store.accounts()
-            guard known.contains(account) else {
+            guard known.contains(where: { $0.caseInsensitiveCompare(account) == .orderedSame }) else {
                 throw MacError(.notFound, "No mail account named '\(account)'. Run: mac mail accounts")
             }
         }
