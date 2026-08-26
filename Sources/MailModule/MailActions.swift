@@ -11,6 +11,7 @@ public struct MailActions {
     public func unread(account: String?, limit: Int) async throws -> [EmailItem] {
         try validate(limit: limit)
         return try await store.unread(account: account, limit: limit)
+            .sorted { $0.date > $1.date }
     }
 
     public func search(query: String, limit: Int) async throws -> [EmailItem] {
@@ -20,6 +21,7 @@ public struct MailActions {
         }
         try validate(limit: limit)
         return try await store.search(trimmed, limit: limit)
+            .sorted { $0.date > $1.date }
     }
 
     public func read(id: String) async throws -> EmailItem {

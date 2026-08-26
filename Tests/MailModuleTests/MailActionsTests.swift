@@ -70,6 +70,15 @@ final class MailActionsTests: XCTestCase {
         XCTAssertEqual(items.map(\.id), ["1", "3"])
     }
 
+    func testUnreadSortsNewestFirst() async throws {
+        store.emails = [
+            EmailItem(id: "old", subject: "s", from: "f", date: when, isRead: false, account: "Work", body: nil),
+            EmailItem(id: "new", subject: "s", from: "f", date: when.addingTimeInterval(3_600), isRead: false, account: "Work", body: nil),
+        ]
+        let items = try await actions.unread(account: nil, limit: 20)
+        XCTAssertEqual(items.map(\.id), ["new", "old"])
+    }
+
     func testEmptySearchQueryThrowsBadInput() async {
         do {
             _ = try await actions.search(query: "  ", limit: 20)
