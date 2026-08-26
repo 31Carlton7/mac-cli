@@ -2,43 +2,61 @@ import Core
 import Foundation
 import SQLite3
 
-/// Read-only reader over Messages' chat.db. Never writes; never blocks Messages.app.
+/// Read-only reader over Messages' chat.db. Never writes message data (SQLite
+/// may still create -shm/-wal sidecars alongside a WAL-mode database even for
+/// a read-only connection).
 public final class ChatDBReader {
-    let path: String
+    private let path: String
 
     public init(path: String = NSHomeDirectory() + "/Library/Messages/chat.db") {
         self.path = path
     }
 
-    static let deniedError = MacError(
+    private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    static let unsupportedContent = "⟨unsupported content⟩"
+
+    private static let deniedError = MacError(
         .permissionDenied,
         "Cannot read the Messages database. Grant Full Disk Access to your terminal app in System Settings > Privacy & Security > Full Disk Access, or run: mac doctor"
     )
 
+    private static func notFoundError(path: String) -> MacError {
+        MacError(.notFound, "No Messages database found at \(path). Messages may never have been set up on this Mac.")
+    }
+
     public func conversations(limit: Int) throws -> [ConversationInfo] {
         try withDB { db in
+            let chatColumns = columnNames(db, table: "chat")
+            let styleSelect = chatColumns.contains("style") ? "MAX(c.style)" : "NULL"
             let sql = """
             SELECT c.chat_identifier,
-                   COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) AS name,
+                   COALESCE(NULLIF(MAX(NULLIF(c.display_name, '')), ''), c.chat_identifier) AS name,
                    MAX(m.date) AS last_date,
-                   (SELECT COUNT(*) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) AS participants
+                   \(styleSelect) AS style,
+                   (SELECT COUNT(*) FROM chat_handle_join chj
+                    JOIN chat c2 ON c2.ROWID = chj.chat_id
+                    WHERE c2.chat_identifier = c.chat_identifier) AS participants
             FROM chat c
             JOIN chat_message_join cmj ON cmj.chat_id = c.ROWID
             JOIN message m ON m.ROWID = cmj.message_id
-            GROUP BY c.ROWID
+            GROUP BY c.chat_identifier
             ORDER BY last_date DESC
-            LIMIT ?;
+            LIMIT ?1;
             """
             let stmt = try prepare(db, sql)
             defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_int(stmt, 1, Int32(limit))
+            sqlite3_bind_int64(stmt, 1, clamped(limit))
             var out: [ConversationInfo] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
+            try forEachRow(db, stmt) { s in
+                let style: Int32? = sqlite3_column_type(s, 3) == SQLITE_NULL ? nil : sqlite3_column_int(s, 3)
+                let participants = sqlite3_column_int(s, 4)
+                let isGroup = style.map { $0 == 43 } ?? (participants > 1)
                 out.append(ConversationInfo(
-                    id: text(stmt, 0),
-                    name: text(stmt, 1),
-                    lastActivity: Self.date(fromAppleEpoch: sqlite3_column_int64(stmt, 2)),
-                    isGroup: sqlite3_column_int(stmt, 3) > 1))
+                    id: text(s, 0),
+                    name: text(s, 1),
+                    lastActivity: Self.date(fromAppleEpoch: sqlite3_column_int64(s, 2)),
+                    isGroup: isGroup))
             }
             return out
         }
@@ -46,6 +64,20 @@ public final class ChatDBReader {
 
     public func history(handle: String, limit: Int) throws -> [MessageItem] {
         try withDB { db in
+            let chatIDs = try chatRowIDs(db, handle: handle)
+            guard !chatIDs.isEmpty else {
+                throw MacError(.notFound, "No conversation found for handle '\(handle)'. Try the exact handle from: mac messages chats")
+            }
+
+            let messageColumns = columnNames(db, table: "message")
+            var noiseClauses: [String] = []
+            if messageColumns.contains("item_type") { noiseClauses.append("m.item_type = 0") }
+            if messageColumns.contains("associated_message_type") { noiseClauses.append("m.associated_message_type = 0") }
+            if messageColumns.contains("date_retracted") { noiseClauses.append("m.date_retracted IS NULL") }
+            let noiseFilter = noiseClauses.isEmpty ? "" : " AND " + noiseClauses.joined(separator: " AND ")
+
+            let placeholders = (1...chatIDs.count).map { "?\($0)" }.joined(separator: ",")
+            let limitIndex = chatIDs.count + 1
             let sql = """
             SELECT m.guid,
                    COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) AS chat,
@@ -54,32 +86,37 @@ public final class ChatDBReader {
             JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
             JOIN chat c ON c.ROWID = cmj.chat_id
             LEFT JOIN handle h ON h.ROWID = m.handle_id
-            WHERE c.chat_identifier = ?
+            WHERE cmj.chat_id IN (\(placeholders))\(noiseFilter)
             ORDER BY m.date DESC
-            LIMIT ?;
+            LIMIT ?\(limitIndex);
             """
             let stmt = try prepare(db, sql)
             defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_text(stmt, 1, handle, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            sqlite3_bind_int(stmt, 2, Int32(limit))
+            for (i, chatID) in chatIDs.enumerated() {
+                sqlite3_bind_int64(stmt, Int32(i + 1), chatID)
+            }
+            sqlite3_bind_int64(stmt, Int32(limitIndex), clamped(limit))
+
             var out: [MessageItem] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let isFromMe = sqlite3_column_int(stmt, 6) == 1
+            try forEachRow(db, stmt) { s in
+                let isFromMe = sqlite3_column_int(s, 6) == 1
+                let inlineText = text(s, 3)
+                let hasInlineText = sqlite3_column_type(s, 3) != SQLITE_NULL && !inlineText.isEmpty
                 let body: String
-                if sqlite3_column_type(stmt, 3) != SQLITE_NULL, !text(stmt, 3).isEmpty {
-                    body = text(stmt, 3)
-                } else if sqlite3_column_type(stmt, 4) != SQLITE_NULL,
-                          let decoded = Self.extractText(fromAttributedBody: blob(stmt, 4)) {
+                if hasInlineText {
+                    body = inlineText
+                } else if sqlite3_column_type(s, 4) != SQLITE_NULL,
+                          let decoded = Self.extractText(fromAttributedBody: blob(s, 4)) {
                     body = decoded
                 } else {
-                    body = "⟨unsupported content⟩"
+                    body = Self.unsupportedContent
                 }
                 out.append(MessageItem(
-                    id: text(stmt, 0),
-                    chat: text(stmt, 1),
-                    sender: isFromMe ? "me" : (sqlite3_column_type(stmt, 2) != SQLITE_NULL ? text(stmt, 2) : text(stmt, 1)),
+                    id: text(s, 0),
+                    chat: text(s, 1),
+                    sender: isFromMe ? "me" : (sqlite3_column_type(s, 2) != SQLITE_NULL ? text(s, 2) : text(s, 1)),
                     text: body,
-                    date: Self.date(fromAppleEpoch: sqlite3_column_int64(stmt, 5)),
+                    date: Self.date(fromAppleEpoch: sqlite3_column_int64(s, 5)),
                     isFromMe: isFromMe))
             }
             return out
@@ -88,17 +125,71 @@ public final class ChatDBReader {
 
     // MARK: - Internals
 
-    func withDB<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+    private func withDB<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw Self.notFoundError(path: path)
+        }
         var db: OpaquePointer?
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
             sqlite3_close(db)
             throw Self.deniedError
         }
+        sqlite3_busy_timeout(db, 2000)
         defer { sqlite3_close(db) }
         return try body(db)
     }
 
-    func prepare(_ db: OpaquePointer, _ sql: String) throws -> OpaquePointer {
+    /// Resolves the handle to the ROWIDs of every chat it could refer to: an
+    /// exact chat_identifier match, an exact (case-insensitive) participant
+    /// handle match, or — when the input has at least 7 digits — a
+    /// digits-only suffix match against either. This is what lets
+    /// `5551234567` and `(555) 123-4567` both resolve to `+15551234567`.
+    private func chatRowIDs(_ db: OpaquePointer, handle: String) throws -> [Int64] {
+        let digits = Self.digitsOnly(handle)
+        var sql = """
+        SELECT DISTINCT c.ROWID
+        FROM chat c
+        LEFT JOIN chat_handle_join chj ON chj.chat_id = c.ROWID
+        LEFT JOIN handle h ON h.ROWID = chj.handle_id
+        WHERE c.chat_identifier = ?1 OR LOWER(h.id) = LOWER(?1)
+        """
+        let strip = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%@,'+',''),'-',''),'(',''),')',''),' ',''),'.','')"
+        if digits.count >= 7 {
+            sql += """
+             OR \(strip.replacingOccurrences(of: "%@", with: "h.id")) LIKE ?2
+             OR \(strip.replacingOccurrences(of: "%@", with: "c.chat_identifier")) LIKE ?2
+            """
+        }
+        sql += ";"
+        let stmt = try prepare(db, sql)
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, handle, -1, Self.transient)
+        if digits.count >= 7 {
+            sqlite3_bind_text(stmt, 2, "%" + digits, -1, Self.transient)
+        }
+        var out: [Int64] = []
+        try forEachRow(db, stmt) { s in out.append(sqlite3_column_int64(s, 0)) }
+        return out
+    }
+
+    private func columnNames(_ db: OpaquePointer, table: String) -> Set<String> {
+        var result = Set<String>()
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table));", -1, &stmt, nil) == SQLITE_OK else { return result }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let cName = sqlite3_column_text(stmt, 1) {
+                result.insert(String(cString: cName))
+            }
+        }
+        return result
+    }
+
+    private func clamped(_ limit: Int) -> Int64 {
+        Int64(max(0, limit))
+    }
+
+    private func prepare(_ db: OpaquePointer, _ sql: String) throws -> OpaquePointer {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else {
             throw NSError(domain: "ChatDB", code: 1,
@@ -107,14 +198,35 @@ public final class ChatDBReader {
         return stmt
     }
 
-    func text(_ stmt: OpaquePointer, _ col: Int32) -> String {
+    /// Steps a prepared statement to completion, invoking `body` for each row.
+    /// SQLITE_ROW is the only "keep going" result — anything other than
+    /// SQLITE_DONE at the end (SQLITE_CORRUPT, SQLITE_BUSY, SQLITE_IOERR, …)
+    /// is a real failure and must not be reported as a silently truncated
+    /// success.
+    private func forEachRow(_ db: OpaquePointer, _ stmt: OpaquePointer, _ body: (OpaquePointer) -> Void) throws {
+        var rc = sqlite3_step(stmt)
+        while rc == SQLITE_ROW {
+            body(stmt)
+            rc = sqlite3_step(stmt)
+        }
+        guard rc == SQLITE_DONE else {
+            throw NSError(domain: "ChatDB", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "chat.db read failed (sqlite rc=\(rc)): \(String(cString: sqlite3_errmsg(db)))"])
+        }
+    }
+
+    private func text(_ stmt: OpaquePointer, _ col: Int32) -> String {
         guard let c = sqlite3_column_text(stmt, col) else { return "" }
         return String(cString: c)
     }
 
-    func blob(_ stmt: OpaquePointer, _ col: Int32) -> Data {
+    private func blob(_ stmt: OpaquePointer, _ col: Int32) -> Data {
         guard let base = sqlite3_column_blob(stmt, col) else { return Data() }
         return Data(bytes: base, count: Int(sqlite3_column_bytes(stmt, col)))
+    }
+
+    private static func digitsOnly(_ s: String) -> String {
+        String(s.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) })
     }
 
     /// chat.db stores dates as nanoseconds since 2001-01-01 (seconds on very old
@@ -126,7 +238,8 @@ public final class ChatDBReader {
 
     /// Heuristic typedstream text extraction: the plain string follows an
     /// "NSString" marker + the byte sequence 01 94 84 01 2B, length-prefixed
-    /// (single byte, or 0x81 + little-endian u16 for long strings).
+    /// (single byte; 0x81 + little-endian u16 for strings up to 65535 bytes;
+    /// 0x82 + little-endian u32 for longer strings still).
     static func extractText(fromAttributedBody data: Data) -> String? {
         let bytes = [UInt8](data)
         let needle = Array("NSString".utf8)
@@ -144,6 +257,10 @@ public final class ChatDBReader {
             guard i + 1 < bytes.count else { return nil }
             length = Int(bytes[i]) | (Int(bytes[i + 1]) << 8)
             i += 2
+        } else if length == 0x82 {
+            guard i + 3 < bytes.count else { return nil }
+            length = Int(bytes[i]) | (Int(bytes[i + 1]) << 8) | (Int(bytes[i + 2]) << 16) | (Int(bytes[i + 3]) << 24)
+            i += 4
         }
         guard i + length <= bytes.count else { return nil }
         return String(bytes: bytes[i..<i + length], encoding: .utf8)
