@@ -8,6 +8,8 @@ public final class AppleScriptMailStore: MailStore {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        // MailScripts.isoDate emits local wall-clock with no offset; parse in the same zone.
+        f.timeZone = TimeZone.current
         return f
     }()
 
@@ -53,7 +55,8 @@ public final class AppleScriptMailStore: MailStore {
     }
 
     static func emails(from output: String, bodyField: Bool = false) -> [EmailItem] {
-        AppleScript.parseRecords(output).compactMap { fields in
+        let records = AppleScript.parseRecords(output)
+        let items = records.compactMap { fields -> EmailItem? in
             guard fields.count >= 6 else { return nil }
             return EmailItem(id: fields[0], subject: fields[1], from: fields[2],
                              date: dateFormatter.date(from: fields[3]) ?? Date(timeIntervalSince1970: 0),
@@ -61,5 +64,10 @@ public final class AppleScriptMailStore: MailStore {
                              account: fields[5],
                              body: bodyField && fields.count >= 7 ? fields[6] : nil)
         }
+        let dropped = records.count - items.count
+        if dropped > 0 {
+            FileHandle.standardError.write(Data("warning: skipped \(dropped) unparseable message record(s)\n".utf8))
+        }
+        return items
     }
 }
