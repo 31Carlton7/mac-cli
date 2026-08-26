@@ -55,7 +55,7 @@ Two new permission types, both surfaced in `mac doctor`:
 |---|---|---|
 | `automation:Mail` | AppleEvents consent, per target app | `AEDeterminePermissionToAutomateTarget(askUserIfNeeded: false)` — no prompt |
 | `automation:Messages` | same | same |
-| `fullDiskAccess` | required to read `chat.db` | empirical: attempt read-only open of chat.db; failure → denied with Settings path |
+| `fullDiskAccess` | required to read `chat.db` | empirical: readable → granted; exists but unreadable → denied; not visible → unknown (no-Messages-setup and TCC-blocked stat are indistinguishable) |
 
 - Embedded Info.plist gains `NSAppleEventsUsageDescription`.
 - Documented caveat (carried from v1): grants attach to the terminal app. Live use happens from Terminal; agent-hosted shells get clean exit-2 permission errors.

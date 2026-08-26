@@ -1,7 +1,7 @@
 import Foundation
 
 public enum AuthState: String, Codable {
-    case granted, denied, notRequested, writeOnly
+    case granted, denied, notRequested, writeOnly, unknown
 }
 
 public struct CapabilityStatus: Codable, Equatable, HumanRenderable {
@@ -19,6 +19,8 @@ public struct CapabilityStatus: Codable, Equatable, HumanRenderable {
             self.fix = "Run any `mac \(capability)` command to trigger the macOS permission prompt."
         case .denied, .writeOnly:
             self.fix = "Enable full access in System Settings > Privacy & Security > \(pane) for your terminal app."
+        case .unknown:
+            self.fix = "Status could not be determined. Re-run mac doctor after using this capability once."
         }
     }
 

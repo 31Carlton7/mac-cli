@@ -59,6 +59,8 @@ struct DoctorCommand: AsyncParsableCommand {
             nil
         case .notRequested:
             "Run any `mac \(commandHint)` command to trigger the consent prompt."
+        case .unknown:
+            "Open \(app) once and re-run mac doctor to determine automation status."
         default:
             "Enable \(app) under System Settings > Privacy & Security > Automation for your terminal app."
         }
@@ -68,8 +70,16 @@ struct DoctorCommand: AsyncParsableCommand {
     static func fullDiskAccessRow() -> CapabilityStatus {
         let path = NSHomeDirectory() + "/Library/Messages/chat.db"
         let state = PermissionProbes.fullDiskAccessState(probing: path)
-        let fix = state == .granted ? nil
-            : "Grant Full Disk Access to your terminal app in System Settings > Privacy & Security > Full Disk Access (required to read Messages history)."
+        let fix: String? = switch state {
+        case .granted:
+            nil
+        case .denied:
+            "Grant Full Disk Access to your terminal app in System Settings > Privacy & Security > Full Disk Access (required to read Messages history)."
+        case .unknown:
+            "Messages data is not visible — either Messages has never been used on this Mac, or your terminal app lacks Full Disk Access (System Settings > Privacy & Security > Full Disk Access)."
+        default:
+            nil
+        }
         return CapabilityStatus(capability: "fullDiskAccess", status: state, fixOverride: fix)
     }
 }
