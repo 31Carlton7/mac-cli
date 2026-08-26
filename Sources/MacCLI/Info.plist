@@ -12,5 +12,7 @@
     <string>mac-cli reads and writes reminders on your behalf.</string>
     <key>NSContactsUsageDescription</key>
     <string>mac-cli reads and writes contacts on your behalf.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>mac-cli controls Mail and Messages on your behalf.</string>
 </dict>
 </plist>
