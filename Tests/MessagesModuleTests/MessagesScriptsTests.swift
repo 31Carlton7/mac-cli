@@ -8,4 +8,10 @@ final class MessagesScriptsTests: XCTestCase {
         XCTAssertTrue(script.contains(#"participant "+15551234567""#))
         XCTAssertTrue(script.contains("service type = iMessage"))
     }
+
+    func testSendScriptHasNoAccountSentinel() {
+        let script = MessagesScripts.send(handle: "+15551234567", text: "hi")
+        XCTAssertTrue(script.contains("NOIMESSAGEACCOUNT"))
+        XCTAssertTrue(script.contains("on error"))
+    }
 }

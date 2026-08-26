@@ -1,6 +1,6 @@
 # mac
 
-An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts today — built on EventKit and the Contacts framework, not AppleScript, so calls run in milliseconds with typed errors and stable IDs.
+An agent-friendly CLI for native macOS apps. Calendar, Reminders, Contacts, Mail, and Messages today — built on EventKit and the Contacts framework, not AppleScript, so calls run in milliseconds with typed errors and stable IDs.
 
 Built for AI agents (Claude Code, etc.) and the humans who drive them: every command has `--json`, stable exit codes, and `--help` with examples.
 
@@ -20,6 +20,8 @@ macOS will prompt once per capability (Calendar, Reminders, Contacts) the first 
 mac doctor
 ```
 
+Mail and Messages additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
+
 ## Usage
 
 ```sh
@@ -28,6 +30,11 @@ mac calendar add "Dentist" --at "tomorrow 2pm" --duration 1h
 mac reminders add "Buy milk" --list Groceries --due "tomorrow 9am"
 mac reminders complete <id>
 mac contacts find "Sarah"
+mac mail unread --limit 10
+mac mail search "invoice"
+mac mail draft --to a@b.com --subject "Hi" --body "..."
+mac messages history +15551234567
+mac messages send +15551234567 "Running 10 min late"
 ```
 
 Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`), and offsets (`+7d`, `+2h`).
@@ -40,18 +47,24 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
+- Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
+- `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
 
-## Known limitations (v1)
+## Known limitations
 
 - **Recurring events** share one ID across all occurrences; `edit`/`delete` act on the series master, not a specific occurrence.
 - **Date-only due dates** get a time of midnight — every reminder due date carries a time.
 - **Duplicate calendar/list names** (e.g. "Personal" in two accounts) resolve to the first match.
 - Contact phone/email labels (mobile/work/home) are flattened to plain values.
 - **No clear-to-nil:** edit flags replace values. A due date, once set, cannot be removed; notes/location/org can be blanked by passing an empty string. Names and titles cannot be set to empty.
+- Mail search matches subject/sender only (no body search); reads are scoped to account inboxes.
+- Mail composition is plain-text; no attachments.
+- Messages: group chats are read-only; sends require an exact handle (or an unambiguous 10+ digit variant).
+- **A successful `mac messages send` is not proof of delivery.** Messages accepts sends to handles that were never registered with iMessage (typos, SMS-only contacts) without a synchronous error. Verify by reading the thread back with `mac messages history`.
 
 ## Roadmap
 
-Mail, Messages, and Notes modules (AppleScript-backed behind the same command surface).
+Notes module (AppleScript-backed behind the same command surface).
 
 ## License
 

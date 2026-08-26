@@ -18,7 +18,10 @@ public final class LiveMessageStore: MessageStore {
     }
 
     public func send(handle: String, text: String) async throws {
-        _ = try await AppleScript.run(MessagesScripts.send(handle: handle, text: text),
-                                      targetName: "Messages")
+        let out = try await AppleScript.run(MessagesScripts.send(handle: handle, text: text),
+                                            targetName: "Messages")
+        if out == MessagesScripts.noAccountSentinel {
+            throw MacError(.badInput, "No iMessage account is signed in. Sign in to Messages, then retry.")
+        }
     }
 }
