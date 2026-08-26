@@ -103,7 +103,7 @@ Same encoder conventions as v1: sorted keys, ISO 8601 dates, nil-omitting, exact
 - **Actions layers:** mock-backed unit tests, v1 pattern — including mock/real fidelity for error paths (unknown IDs, permission denial), the lesson v1 learned twice.
 - **AppleScript builders:** pure functions; tests assert exact generated script strings, including escaping of `"`, `\`, and newlines embedded in user input (injection tests).
 - **ChatDBReader:** unit tests build a fixture `chat.db` in a temp directory with the real schema — seeded rows including a NULL-`text`/`attributedBody` row and Apple-epoch nanosecond dates — so SQL and decoding run for real in CI-safe tests, no FDA required.
-- **Smoke test:** `scripts/smoke.sh` gains mail + messages sections: create a draft and delete it; `messages send` to the user's **own handle** (self-message), then verify by reading it back via `messages history`. Run from Terminal like v1's.
+- **Smoke test:** `scripts/smoke.sh` gains mail + messages sections: mail unread/search (read path) plus a draft with a self-describing "safe to close" subject (deleting drafts via AppleScript is unreliable, so the user closes it); `messages send` to the user's **own handle** via `SMOKE_HANDLE` (self-message), verified by reading it back via `messages history`. Run from Terminal like v1's.
 
 ## Non-goals (v2)
 
