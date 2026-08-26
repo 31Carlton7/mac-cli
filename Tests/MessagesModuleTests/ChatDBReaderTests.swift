@@ -267,6 +267,68 @@ final class ChatDBReaderTests: XCTestCase {
         XCTAssertEqual(try reader.history(handle: "(555) 123-4567", limit: 10).count, 1)
     }
 
+    func testExactMatchWinsOverSuffixCandidates() throws {
+        // Two chats whose digits-only forms share a 10-digit suffix — a naive
+        // suffix search would match both, but an exact identifier match must
+        // short-circuit before suffix matching is even attempted.
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertMessage(db, rowID: 1, guid: "g-a", text: "from A", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+
+            self.insertChat(db, rowID: 2, identifier: "+445551234567")
+            self.insertMessage(db, rowID: 2, guid: "g-b", text: "from B", blob: nil,
+                                date: self.appleEpochNS(60), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 2, messageID: 2)
+        }
+        let reader = ChatDBReader(path: path)
+        let items = try reader.history(handle: "+15551234567", limit: 10)
+        XCTAssertEqual(items.map { $0.id }, ["g-a"])
+    }
+
+    func testAmbiguousSuffixThrowsBadInput() throws {
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertMessage(db, rowID: 1, guid: "g-a", text: "from A", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+
+            self.insertChat(db, rowID: 2, identifier: "+445551234567")
+            self.insertMessage(db, rowID: 2, guid: "g-b", text: "from B", blob: nil,
+                                date: self.appleEpochNS(60), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 2, messageID: 2)
+        }
+        let reader = ChatDBReader(path: path)
+        do {
+            _ = try reader.history(handle: "5551234567", limit: 10)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            XCTAssertTrue(error.message.contains("+15551234567"))
+            XCTAssertTrue(error.message.contains("+445551234567"))
+        } catch { XCTFail("wrong error type: \(error)") }
+    }
+
+    func testShortNumericHandleThrowsNotFoundRatherThanSuffixMatching() throws {
+        // "+441234567" digits-end-with "1234567" — under the old 7-digit
+        // threshold this would have suffix-matched; under the 10-digit
+        // threshold it must not even attempt a suffix query.
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+441234567")
+            self.insertMessage(db, rowID: 1, guid: "g-a", text: "hi", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+        }
+        let reader = ChatDBReader(path: path)
+        do {
+            _ = try reader.history(handle: "1234567", limit: 10)
+            XCTFail("expected notFound")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .notFound)
+        } catch { XCTFail("wrong error type: \(error)") }
+    }
+
     func testUnknownHandleThrowsNotFound() throws {
         let path = makeFixtureDB { db in
             self.insertChat(db, rowID: 1, identifier: "+15551234567")
@@ -350,13 +412,56 @@ final class ChatDBReaderTests: XCTestCase {
         XCTAssertEqual(convos[0].isGroup, false)
     }
 
-    func testUnreadablePathThrowsNotFoundWhenMissing() {
-        let reader = ChatDBReader(path: "/nonexistent/dir/chat.db")
+    func testUnreadablePathThrowsNotFoundWhenMissing() throws {
+        // A real, traversable directory with no chat.db inside — the realistic
+        // "Messages was never set up on this Mac" shape. (An arbitrary
+        // /nonexistent/... path doesn't exercise this: its parent isn't
+        // readable either, which is the *other* branch — see
+        // testBlockedParentDirectoryThrowsPermissionDeniedWhenFileMissing.)
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-chatdb-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let missingPath = dir.appendingPathComponent("chat.db").path
+
+        let reader = ChatDBReader(path: missingPath)
         do {
             _ = try reader.conversations(limit: 5)
             XCTFail("expected notFound")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .notFound)
+        } catch { XCTFail("wrong error type") }
+    }
+
+    /// The realistic no-Full-Disk-Access shape: chat.db exists, but TCC blocks
+    /// the stat on its parent directory (~/Library/Messages), so a naive
+    /// fileExists-first check would misreport this as "never set up" instead
+    /// of the FDA instruction. Simulated here with a chmod-000 parent.
+    func testBlockedParentDirectoryThrowsPermissionDeniedWhenFileMissing() throws {
+        let parentDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-chatdb-blocked-parent-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+        let dbPath = parentDir.appendingPathComponent("chat.db").path
+        try Data("x".utf8).write(to: URL(fileURLWithPath: dbPath))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: parentDir.path)
+        defer {
+            // Restore permissions first so the directory can actually be removed.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: parentDir.path)
+            try? FileManager.default.removeItem(at: parentDir)
+        }
+
+        if FileManager.default.isReadableFile(atPath: parentDir.path) {
+            throw XCTSkip("process can traverse despite chmod 000 (likely running as root); denied case not exercisable")
+        }
+
+        let reader = ChatDBReader(path: dbPath)
+        do {
+            _ = try reader.conversations(limit: 5)
+            XCTFail("expected permissionDenied")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .permissionDenied)
+            XCTAssertTrue(error.message.contains("Full Disk Access"))
         } catch { XCTFail("wrong error type") }
     }
 

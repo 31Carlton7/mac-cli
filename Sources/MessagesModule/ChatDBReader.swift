@@ -126,12 +126,20 @@ public final class ChatDBReader {
     // MARK: - Internals
 
     private func withDB<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
-        guard FileManager.default.fileExists(atPath: path) else {
-            throw Self.notFoundError(path: path)
-        }
         var db: OpaquePointer?
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
             sqlite3_close(db)
+            let parent = (path as NSString).deletingLastPathComponent
+            // A blocked stat looks identical to a missing file — TCC denies the
+            // stat itself for a protected directory — so "missing" is only
+            // trustworthy when we can actually see into the parent directory.
+            // Otherwise this is the FDA-not-granted case, which is by far the
+            // more common real-world failure and must not be misreported as
+            // "Messages was never set up".
+            if FileManager.default.isReadableFile(atPath: parent),
+               !FileManager.default.fileExists(atPath: path) {
+                throw Self.notFoundError(path: path)
+            }
             throw Self.deniedError
         }
         sqlite3_busy_timeout(db, 2000)
@@ -139,46 +147,68 @@ public final class ChatDBReader {
         return try body(db)
     }
 
-    /// Resolves the handle to the ROWIDs of every chat it could refer to: an
-    /// exact chat_identifier match, an exact (case-insensitive) participant
-    /// handle match, or — when the input has at least 7 digits — a
-    /// digits-only suffix match against either. This is what lets
-    /// `5551234567` and `(555) 123-4567` both resolve to `+15551234567`.
+    /// Resolves the handle to the ROWIDs of every chat it could refer to.
+    /// Exact matches (chat_identifier, or a case-insensitive participant
+    /// handle) always win outright. Only when there is no exact match, and
+    /// the handle has at least 10 digits, do we fall back to a digits-only
+    /// suffix match — e.g. `5551234567` or `(555) 123-4567` resolving to
+    /// `+15551234567`. A suffix match spanning more than one distinct
+    /// chat_identifier is ambiguous (could be two different people) and
+    /// throws rather than silently interleaving both conversations.
     private func chatRowIDs(_ db: OpaquePointer, handle: String) throws -> [Int64] {
-        let digits = Self.digitsOnly(handle)
-        var sql = """
+        let exactSQL = """
         SELECT DISTINCT c.ROWID
         FROM chat c
         LEFT JOIN chat_handle_join chj ON chj.chat_id = c.ROWID
         LEFT JOIN handle h ON h.ROWID = chj.handle_id
-        WHERE c.chat_identifier = ?1 OR LOWER(h.id) = LOWER(?1)
+        WHERE c.chat_identifier = ?1 OR LOWER(h.id) = LOWER(?1);
         """
+        let exactStmt = try prepare(db, exactSQL)
+        var exactIDs: [Int64] = []
+        do {
+            defer { sqlite3_finalize(exactStmt) }
+            sqlite3_bind_text(exactStmt, 1, handle, -1, Self.transient)
+            try forEachRow(db, exactStmt) { s in exactIDs.append(sqlite3_column_int64(s, 0)) }
+        }
+        if !exactIDs.isEmpty { return exactIDs }
+
+        let digits = Self.digitsOnly(handle)
+        guard digits.count >= 10 else { return [] }
+
         let strip = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%@,'+',''),'-',''),'(',''),')',''),' ',''),'.','')"
-        if digits.count >= 7 {
-            sql += """
-             OR \(strip.replacingOccurrences(of: "%@", with: "h.id")) LIKE ?2
-             OR \(strip.replacingOccurrences(of: "%@", with: "c.chat_identifier")) LIKE ?2
-            """
+        let suffixSQL = """
+        SELECT DISTINCT c.ROWID, c.chat_identifier
+        FROM chat c
+        LEFT JOIN chat_handle_join chj ON chj.chat_id = c.ROWID
+        LEFT JOIN handle h ON h.ROWID = chj.handle_id
+        WHERE \(strip.replacingOccurrences(of: "%@", with: "h.id")) LIKE ?1
+           OR \(strip.replacingOccurrences(of: "%@", with: "c.chat_identifier")) LIKE ?1;
+        """
+        let suffixStmt = try prepare(db, suffixSQL)
+        defer { sqlite3_finalize(suffixStmt) }
+        sqlite3_bind_text(suffixStmt, 1, "%" + digits, -1, Self.transient)
+
+        var identifierByRowID: [Int64: String] = [:]
+        try forEachRow(db, suffixStmt) { s in
+            identifierByRowID[sqlite3_column_int64(s, 0)] = text(s, 1)
         }
-        sql += ";"
-        let stmt = try prepare(db, sql)
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_text(stmt, 1, handle, -1, Self.transient)
-        if digits.count >= 7 {
-            sqlite3_bind_text(stmt, 2, "%" + digits, -1, Self.transient)
+        let identifiers = Set(identifierByRowID.values)
+        if identifiers.count > 1 {
+            let sorted = identifiers.sorted()
+            let shown = sorted.prefix(5).joined(separator: ", ")
+            let ellipsis = sorted.count > 5 ? ", …" : ""
+            throw MacError(.badInput,
+                "Handle '\(handle)' matches multiple conversations: \(shown)\(ellipsis). Use an exact handle from: mac messages chats")
         }
-        var out: [Int64] = []
-        try forEachRow(db, stmt) { s in out.append(sqlite3_column_int64(s, 0)) }
-        return out
+        return Array(identifierByRowID.keys)
     }
 
     private func columnNames(_ db: OpaquePointer, table: String) -> Set<String> {
         var result = Set<String>()
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table));", -1, &stmt, nil) == SQLITE_OK else { return result }
+        guard let stmt = try? prepare(db, "PRAGMA table_info(\(table));") else { return result }
         defer { sqlite3_finalize(stmt) }
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            if let cName = sqlite3_column_text(stmt, 1) {
+        try? forEachRow(db, stmt) { s in
+            if let cName = sqlite3_column_text(s, 1) {
                 result.insert(String(cString: cName))
             }
         }
@@ -238,7 +268,7 @@ public final class ChatDBReader {
 
     /// Heuristic typedstream text extraction: the plain string follows an
     /// "NSString" marker + the byte sequence 01 94 84 01 2B, length-prefixed
-    /// (single byte; 0x81 + little-endian u16 for strings up to 65535 bytes;
+    /// (single byte; 0x81 + little-endian signed i16, i.e. up to 32767 bytes;
     /// 0x82 + little-endian u32 for longer strings still).
     static func extractText(fromAttributedBody data: Data) -> String? {
         let bytes = [UInt8](data)
