@@ -41,4 +41,17 @@ public enum Output {
     public static func emit<T: Encodable & HumanRenderable>(_ item: T, json: Bool) {
         print(render(item, json: json))
     }
+
+    /// Emits a single-key confirmation ({"sent":"<value>"} in JSON mode, "<human> <value>"
+    /// otherwise). Values are JSON-encoded, never interpolated, so quotes and
+    /// backslashes in user input can't corrupt the envelope.
+    public static func emitConfirmation(key: String, value: String, human: String,
+                                        json: Bool, quiet: Bool) {
+        if json {
+            let data = try! JSONSerialization.data(withJSONObject: [key: value], options: [.sortedKeys])
+            print(String(data: data, encoding: .utf8)!)
+        } else if !quiet {
+            print("\(human) \(value)")
+        }
+    }
 }

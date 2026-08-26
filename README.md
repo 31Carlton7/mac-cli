@@ -1,6 +1,6 @@
 # mac
 
-An agent-friendly CLI for native macOS apps. Calendar, Reminders, Contacts, Mail, and Messages today — built on EventKit and the Contacts framework, not AppleScript, so calls run in milliseconds with typed errors and stable IDs.
+An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail and Messages use AppleScript and a read-only Messages database, since Apple ships no public APIs for them.
 
 Built for AI agents (Claude Code, etc.) and the humans who drive them: every command has `--json`, stable exit codes, and `--help` with examples.
 
@@ -30,6 +30,7 @@ mac calendar add "Dentist" --at "tomorrow 2pm" --duration 1h
 mac reminders add "Buy milk" --list Groceries --due "tomorrow 9am"
 mac reminders complete <id>
 mac contacts find "Sarah"
+mac mail accounts
 mac mail unread --limit 10
 mac mail search "invoice"
 mac mail draft --to a@b.com --subject "Hi" --body "..."
@@ -43,7 +44,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 
 - `--json` on every command; sorted keys, ISO 8601 dates; schemas are stable.
 - Exit codes: `0` success, `1` not found / bad input, `2` permission denied.
-- Mutations (`edit`, `delete`, `complete`) take exact IDs only — get IDs from `list`/`find`.
+- Mutations (`edit`, `delete`, `complete`, `mark-read`, `archive`) take exact IDs only — get IDs from `list`/`find`.
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
@@ -58,8 +59,11 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Contact phone/email labels (mobile/work/home) are flattened to plain values.
 - **No clear-to-nil:** edit flags replace values. A due date, once set, cannot be removed; notes/location/org can be blanked by passing an empty string. Names and titles cannot be set to empty.
 - Mail search matches subject/sender only (no body search); reads are scoped to account inboxes.
+- Mail list ordering depends on Mail.app's own enumeration; `mac` over-fetches and re-sorts newest-first, which is reliable for typical inboxes but not guaranteed for very large unread counts.
 - Mail composition is plain-text; no attachments.
-- Messages: group chats are read-only; sends require an exact handle (or an unambiguous 10+ digit variant).
+- Messages: group chats are read-only.
+- `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.
+- `mac messages send` requires an exact handle — it does no normalization.
 - **A successful `mac messages send` is not proof of delivery.** Messages accepts sends to handles that were never registered with iMessage (typos, SMS-only contacts) without a synchronous error. Verify by reading the thread back with `mac messages history`.
 
 ## Roadmap

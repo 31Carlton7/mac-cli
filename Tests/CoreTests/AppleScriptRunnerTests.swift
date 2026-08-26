@@ -34,6 +34,19 @@ final class AppleScriptRunnerTests: XCTestCase {
         XCTAssertTrue(mac.message.contains("mac doctor"))
     }
 
+    func testMapErrorTargetAppUnavailable() {
+        for number in [-600, -10814] {
+            let info: NSDictionary = [NSAppleScript.errorNumber: number,
+                                      NSAppleScript.errorMessage: "Application isn't running."]
+            let error = AppleScript.mapError(info, targetName: "Messages")
+            guard let mac = error as? MacError else {
+                return XCTFail("expected MacError for \(number)")
+            }
+            XCTAssertEqual(mac.code, .notFound)
+            XCTAssertTrue(mac.message.contains("Messages"), "message: \(mac.message)")
+        }
+    }
+
     func testMapErrorUnknownStaysGeneric() {
         let info: NSDictionary = [NSAppleScript.errorNumber: -1728,
                                   NSAppleScript.errorMessage: "Can't get message."]

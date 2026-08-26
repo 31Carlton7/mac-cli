@@ -97,11 +97,8 @@ public struct RemindersCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 try await ReminderActions(store: EventKitReminderStore()).delete(id: id)
-                if output.json {
-                    print(#"{"deleted":"\#(id)"}"#)
-                } else if !output.quiet {
-                    print("deleted \(id)")
-                }
+                Output.emitConfirmation(key: "deleted", value: id, human: "deleted",
+                                        json: output.json, quiet: output.quiet)
             }
         }
     }

@@ -397,6 +397,27 @@ final class ChatDBReaderTests: XCTestCase {
         XCTAssertEqual(items.map { $0.id }, ["g-real"])
     }
 
+    func testConversationsIgnoreNoiseRowsForLastActivity() throws {
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertMessage(db, rowID: 1, guid: "g-real", text: "hello", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+            self.insertMessage(db, rowID: 2, guid: "g-newest-real", text: "still here", blob: nil,
+                                date: self.appleEpochNS(60), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 2)
+            // Newest row overall, but a tapback — it must not set lastActivity.
+            self.insertMessage(db, rowID: 3, guid: "g-tapback", text: nil, blob: nil,
+                                date: self.appleEpochNS(120), isFromMe: false, handleID: nil,
+                                associatedMessageType: 2000)
+            self.joinChatMessage(db, chatID: 1, messageID: 3)
+        }
+        let reader = ChatDBReader(path: path)
+        let convos = try reader.conversations(limit: 10)
+        XCTAssertEqual(convos.count, 1)
+        XCTAssertEqual(convos[0].lastActivity, Date(timeIntervalSince1970: 1_787_824_860))
+    }
+
     func testOldSchemaDBReadsWithoutError() throws {
         let path = makeFixtureDB(fullSchema: false) { db in
             self.insertChat(db, rowID: 1, identifier: "+15551234567", fullSchema: false)

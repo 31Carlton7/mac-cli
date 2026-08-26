@@ -4,6 +4,7 @@ import Core
 
 final class MockMailStore: MailStore {
     var accessGranted = true
+    var accountNames = ["Work", "Personal"]
     var emails: [EmailItem] = []
     var drafted: [MailDraft] = []
     var sent: [MailDraft] = []
@@ -13,6 +14,11 @@ final class MockMailStore: MailStore {
         if !accessGranted {
             throw MacError(.permissionDenied, "Mail automation not granted. Run: mac doctor")
         }
+    }
+
+    func accounts() async throws -> [String] {
+        try gate()
+        return accountNames
     }
 
     func unread(account: String?, limit: Int) async throws -> [EmailItem] {
@@ -77,6 +83,48 @@ final class MailActionsTests: XCTestCase {
         ]
         let items = try await actions.unread(account: nil, limit: 20)
         XCTAssertEqual(items.map(\.id), ["new", "old"])
+    }
+
+    func testUnreadOverFetchesThenTruncatesToLimit() async throws {
+        // 12 unread, ascending dates in insertion order (worst case: store yields oldest first).
+        store.emails = (0..<12).map {
+            EmailItem(id: "m\($0)", subject: "s", from: "f",
+                      date: when.addingTimeInterval(Double($0) * 60),
+                      isRead: false, account: "Work", body: nil)
+        }
+        let items = try await actions.unread(account: nil, limit: 3)
+        XCTAssertEqual(items.count, 3)
+        XCTAssertEqual(items.map(\.id), ["m11", "m10", "m9"]) // newest three
+    }
+
+    func testSearchOverFetchesThenTruncatesToLimit() async throws {
+        store.emails = (0..<12).map {
+            EmailItem(id: "m\($0)", subject: "invoice", from: "f",
+                      date: when.addingTimeInterval(Double($0) * 60),
+                      isRead: false, account: "Work", body: nil)
+        }
+        let items = try await actions.search(query: "invoice", limit: 3)
+        XCTAssertEqual(items.map(\.id), ["m11", "m10", "m9"])
+    }
+
+    func testUnknownAccountThrowsNotFound() async {
+        do {
+            _ = try await actions.unread(account: "Bogus", limit: 20)
+            XCTFail("expected notFound")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .notFound)
+        } catch { XCTFail("wrong error type") }
+    }
+
+    func testKnownAccountPasses() async throws {
+        store.emails = [email("1")]
+        let items = try await actions.unread(account: "Work", limit: 20)
+        XCTAssertEqual(items.map(\.id), ["1"])
+    }
+
+    func testAccountsPassesThroughStore() async throws {
+        let names = try await actions.accounts()
+        XCTAssertEqual(names, ["Work", "Personal"])
     }
 
     func testEmptySearchQueryThrowsBadInput() async {

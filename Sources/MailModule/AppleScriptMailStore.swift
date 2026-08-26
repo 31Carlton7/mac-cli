@@ -13,6 +13,11 @@ public final class AppleScriptMailStore: MailStore {
         return f
     }()
 
+    public func accounts() async throws -> [String] {
+        let out = try await AppleScript.run(MailScripts.accounts(), targetName: "Mail")
+        return AppleScript.parseRecords(out).compactMap { $0.first }.filter { !$0.isEmpty }
+    }
+
     public func unread(account: String?, limit: Int) async throws -> [EmailItem] {
         let out = try await AppleScript.run(MailScripts.unread(account: account, limit: limit), targetName: "Mail")
         return Self.emails(from: out)

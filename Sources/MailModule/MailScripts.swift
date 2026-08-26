@@ -18,6 +18,20 @@ enum MailScripts {
     end isoDate
     """
 
+    static func accounts() -> String {
+        """
+        \(prologue)
+        set out to {}
+        tell application "Mail"
+            repeat with a in accounts
+                copy ((name of a) as text) to end of out
+            end repeat
+        end tell
+        set AppleScript's text item delimiters to RS
+        return out as text
+        """
+    }
+
     static func unread(account: String?, limit: Int) -> String {
         let filter = account.map {
             "if acctName is not \"\(AppleScript.escape($0))\" then set skip to true"

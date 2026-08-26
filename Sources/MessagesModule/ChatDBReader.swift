@@ -29,6 +29,8 @@ public final class ChatDBReader {
         try withDB { db in
             let chatColumns = columnNames(db, table: "chat")
             let styleSelect = chatColumns.contains("style") ? "MAX(c.style)" : "NULL"
+            // Same filter `history` applies, so a tapback or system row can't set
+            // a chat's last activity and reorder the list against what you'd read.
             let sql = """
             SELECT c.chat_identifier,
                    COALESCE(NULLIF(MAX(NULLIF(c.display_name, '')), ''), c.chat_identifier) AS name,
@@ -40,6 +42,7 @@ public final class ChatDBReader {
             FROM chat c
             JOIN chat_message_join cmj ON cmj.chat_id = c.ROWID
             JOIN message m ON m.ROWID = cmj.message_id
+            WHERE 1\(noiseFilter(db))
             GROUP BY c.chat_identifier
             ORDER BY last_date DESC
             LIMIT ?1;
@@ -69,13 +72,6 @@ public final class ChatDBReader {
                 throw MacError(.notFound, "No conversation found for handle '\(handle)'. Try the exact handle from: mac messages chats")
             }
 
-            let messageColumns = columnNames(db, table: "message")
-            var noiseClauses: [String] = []
-            if messageColumns.contains("item_type") { noiseClauses.append("m.item_type = 0") }
-            if messageColumns.contains("associated_message_type") { noiseClauses.append("m.associated_message_type = 0") }
-            if messageColumns.contains("date_retracted") { noiseClauses.append("m.date_retracted IS NULL") }
-            let noiseFilter = noiseClauses.isEmpty ? "" : " AND " + noiseClauses.joined(separator: " AND ")
-
             let placeholders = (1...chatIDs.count).map { "?\($0)" }.joined(separator: ",")
             let limitIndex = chatIDs.count + 1
             let sql = """
@@ -86,7 +82,7 @@ public final class ChatDBReader {
             JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
             JOIN chat c ON c.ROWID = cmj.chat_id
             LEFT JOIN handle h ON h.ROWID = m.handle_id
-            WHERE cmj.chat_id IN (\(placeholders))\(noiseFilter)
+            WHERE cmj.chat_id IN (\(placeholders))\(noiseFilter(db))
             ORDER BY m.date DESC
             LIMIT ?\(limitIndex);
             """
@@ -201,6 +197,18 @@ public final class ChatDBReader {
                 "Handle '\(handle)' matches multiple conversations: \(shown)\(ellipsis). Use an exact handle from: mac messages chats")
         }
         return Array(identifierByRowID.keys)
+    }
+
+    /// Trailing ` AND ...` clauses excluding tapbacks, system rows, and retracted
+    /// messages from a query over `message m`. Each clause is probed against the
+    /// schema first, since older chat.db files lack these columns.
+    private func noiseFilter(_ db: OpaquePointer) -> String {
+        let messageColumns = columnNames(db, table: "message")
+        var clauses: [String] = []
+        if messageColumns.contains("item_type") { clauses.append("m.item_type = 0") }
+        if messageColumns.contains("associated_message_type") { clauses.append("m.associated_message_type = 0") }
+        if messageColumns.contains("date_retracted") { clauses.append("m.date_retracted IS NULL") }
+        return clauses.isEmpty ? "" : " AND " + clauses.joined(separator: " AND ")
     }
 
     private func columnNames(_ db: OpaquePointer, table: String) -> Set<String> {

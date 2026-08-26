@@ -37,12 +37,17 @@ public enum AppleScript {
     }
 
     /// -1743 (Automation consent denied) -> permissionDenied MacError.
+    /// -600/-10814 (target app unavailable) -> notFound MacError.
     /// Everything else -> plain NSError so withErrorHandling emits the internal envelope.
     static func mapError(_ info: NSDictionary, targetName: String) -> Error {
         let number = (info[NSAppleScript.errorNumber] as? Int) ?? 0
         let message = (info[NSAppleScript.errorMessage] as? String) ?? "AppleScript error \(number)"
         if number == -1743 {
             return MacError(.permissionDenied, "\(targetName) automation not granted. Enable \(targetName) under System Settings > Privacy & Security > Automation for your terminal app, or run: mac doctor")
+        }
+        // -600 procNotFound, -10814 no application found for the target.
+        if number == -600 || number == -10814 {
+            return MacError(.notFound, "\(targetName) is not available. Make sure \(targetName).app is installed and open it once, then retry.")
         }
         return NSError(domain: "AppleScript", code: number,
                        userInfo: [NSLocalizedDescriptionKey: "\(targetName): \(message)"])

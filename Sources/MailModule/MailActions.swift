@@ -8,10 +8,27 @@ public struct MailActions {
         self.store = store
     }
 
+    /// Mail's AppleScript enumeration order isn't contractually newest-first, so we
+    /// over-fetch a bounded window, sort by date, then truncate to the requested limit.
+    static let overFetchFactor = 5
+    static let overFetchCap = 300
+
+    public func accounts() async throws -> [String] {
+        try await store.accounts()
+    }
+
     public func unread(account: String?, limit: Int) async throws -> [EmailItem] {
         try validate(limit: limit)
-        return try await store.unread(account: account, limit: limit)
-            .sorted { $0.date > $1.date }
+        // An unrecognised account would otherwise filter to nothing and read as
+        // a confidently empty inbox.
+        if let account {
+            let known = try await store.accounts()
+            guard known.contains(account) else {
+                throw MacError(.notFound, "No mail account named '\(account)'. Run: mac mail accounts")
+            }
+        }
+        let fetched = try await store.unread(account: account, limit: Self.window(for: limit))
+        return Self.newestFirst(fetched, limit: limit)
     }
 
     public func search(query: String, limit: Int) async throws -> [EmailItem] {
@@ -20,8 +37,8 @@ public struct MailActions {
             throw MacError(.badInput, "Search query cannot be empty.")
         }
         try validate(limit: limit)
-        return try await store.search(trimmed, limit: limit)
-            .sorted { $0.date > $1.date }
+        let fetched = try await store.search(trimmed, limit: Self.window(for: limit))
+        return Self.newestFirst(fetched, limit: limit)
     }
 
     public func read(id: String) async throws -> EmailItem {
@@ -59,5 +76,13 @@ public struct MailActions {
         guard (1...200).contains(limit) else {
             throw MacError(.badInput, "--limit must be between 1 and 200.")
         }
+    }
+
+    static func window(for limit: Int) -> Int {
+        min(limit * overFetchFactor, overFetchCap)
+    }
+
+    static func newestFirst(_ items: [EmailItem], limit: Int) -> [EmailItem] {
+        Array(items.sorted { $0.date > $1.date }.prefix(limit))
     }
 }

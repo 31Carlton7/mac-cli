@@ -42,6 +42,13 @@ final class MailScriptsTests: XCTestCase {
         XCTAssertTrue(asSend.contains("visible:false"))
     }
 
+    func testAccountsScriptEnumeratesAccountNames() {
+        let script = MailScripts.accounts()
+        XCTAssertTrue(script.contains("repeat with a in accounts"))
+        XCTAssertTrue(script.contains("name of a"))
+        XCTAssertTrue(script.contains("character id 30"))
+    }
+
     func testArchiveScriptSentinels() {
         let script = MailScripts.archive(id: "<m1@x>")
         XCTAssertTrue(script.contains("NOTFOUND"))

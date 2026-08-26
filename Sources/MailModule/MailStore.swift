@@ -16,6 +16,7 @@ public struct MailDraft: Equatable {
 }
 
 public protocol MailStore {
+    func accounts() async throws -> [String]
     func unread(account: String?, limit: Int) async throws -> [EmailItem]
     func search(_ query: String, limit: Int) async throws -> [EmailItem]
     func read(id: String) async throws -> EmailItem

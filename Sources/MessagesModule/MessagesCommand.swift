@@ -60,11 +60,8 @@ public struct MessagesCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 try await MessageActions(store: LiveMessageStore()).send(handle: handle, text: text)
-                if output.json {
-                    print(#"{"sent":"\#(handle)"}"#)
-                } else if !output.quiet {
-                    print("sent to \(handle)")
-                }
+                Output.emitConfirmation(key: "sent", value: handle, human: "sent to",
+                                        json: output.json, quiet: output.quiet)
             }
         }
     }

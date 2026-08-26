@@ -14,7 +14,7 @@ public struct MailCommand: AsyncParsableCommand {
         commandName: "mail",
         abstract: "Read, triage, and compose email via Mail.app.",
         subcommands: [Unread.self, Search.self, Read.self, Draft.self, Send.self,
-                      MarkRead.self, Archive.self]
+                      MarkRead.self, Archive.self, Accounts.self]
     )
 
     public init() {}
@@ -87,6 +87,8 @@ public struct MailCommand: AsyncParsableCommand {
                 try await MailActions(store: AppleScriptMailStore())
                     .compose(to: compose.to, cc: compose.cc, subject: compose.subject,
                              body: compose.body, send: false)
+                // Both envelopes are fixed text with no user-supplied value, so
+                // there is nothing for emitConfirmation to escape here.
                 if output.json {
                     print(#"{"draft":"opened"}"#)
                 } else if !output.quiet {
@@ -110,11 +112,8 @@ public struct MailCommand: AsyncParsableCommand {
                 try await MailActions(store: AppleScriptMailStore())
                     .compose(to: compose.to, cc: compose.cc, subject: compose.subject,
                              body: compose.body, send: true)
-                if output.json {
-                    print(#"{"sent":"\#(compose.to)"}"#)
-                } else if !output.quiet {
-                    print("sent to \(compose.to)")
-                }
+                Output.emitConfirmation(key: "sent", value: compose.to, human: "sent to",
+                                        json: output.json, quiet: output.quiet)
             }
         }
     }
@@ -131,11 +130,8 @@ public struct MailCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 try await MailActions(store: AppleScriptMailStore()).markRead(id: id)
-                if output.json {
-                    print(#"{"markedRead":"\#(id)"}"#)
-                } else if !output.quiet {
-                    print("marked read \(id)")
-                }
+                Output.emitConfirmation(key: "markedRead", value: id, human: "marked read",
+                                        json: output.json, quiet: output.quiet)
             }
         }
     }
@@ -151,10 +147,25 @@ public struct MailCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 try await MailActions(store: AppleScriptMailStore()).archive(id: id)
+                Output.emitConfirmation(key: "archived", value: id, human: "archived",
+                                        json: output.json, quiet: output.quiet)
+            }
+        }
+    }
+
+    struct Accounts: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "List configured Mail accounts.")
+
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let names = try await MailActions(store: AppleScriptMailStore()).accounts()
                 if output.json {
-                    print(#"{"archived":"\#(id)"}"#)
-                } else if !output.quiet {
-                    print("archived \(id)")
+                    let data = try! JSONSerialization.data(withJSONObject: names, options: [.sortedKeys])
+                    print(String(data: data, encoding: .utf8)!)
+                } else if !names.isEmpty {
+                    print(names.joined(separator: "\n"))
                 }
             }
         }
