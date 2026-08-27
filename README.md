@@ -1,6 +1,6 @@
 # mac
 
-An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail and Messages use AppleScript and a read-only Messages database, since Apple ships no public APIs for them.
+An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail, Messages, and Notes use AppleScript and a read-only Messages database, since Apple ships no public APIs for them.
 
 Built for AI agents (Claude Code, etc.) and the humans who drive them: every command has `--json`, stable exit codes, and `--help` with examples.
 
@@ -20,7 +20,7 @@ macOS will prompt once per capability (Calendar, Reminders, Contacts) the first 
 mac doctor
 ```
 
-Mail and Messages additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
+Mail, Messages, and Notes additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
 
 ## Usage
 
@@ -36,6 +36,10 @@ mac mail search "invoice"
 mac mail draft --to a@b.com --subject "Hi" --body "..."
 mac messages history +15551234567
 mac messages send +15551234567 "Running 10 min late"
+mac notes list --folder Ideas
+mac notes search "brunch"
+mac notes add "Meeting notes" --body "Attendees: ..." --folder Work
+mac notes append <id> "one more thing"
 ```
 
 Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`), and offsets (`+7d`, `+2h`).
@@ -68,10 +72,11 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.
 - `mac messages send` requires an exact handle — it does no normalization.
 - **A successful `mac messages send` is not proof of delivery.** Messages accepts sends to handles that were never registered with iMessage (typos, SMS-only contacts) without a synchronous error. Verify by reading the thread back with `mac messages history`.
+- Notes: password-protected notes appear in listings but their bodies read as empty; `delete` moves to Recently Deleted (recoverable) rather than erasing; folder names are resolved per-name, so duplicates across accounts need `--account`; checklists and attachments flatten to plain text.
 
 ## Roadmap
 
-Notes module (AppleScript-backed behind the same command surface).
+Homebrew tap distribution.
 
 ## License
 

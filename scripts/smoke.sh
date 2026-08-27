@@ -71,4 +71,13 @@ else
   echo "   (set SMOKE_HANDLE=+1555… to also test send+history round-trip)"
 fi
 
+echo "== notes =="
+NOTE_ID=$("$MAC" notes add "mac-cli smoke note" --body "created by smoke" --json | json_field id)
+"$MAC" notes append "$NOTE_ID" "appended line" --quiet
+"$MAC" notes read "$NOTE_ID" --json | json_field body | grep -q "appended line"
+"$MAC" notes edit "$NOTE_ID" --title "mac-cli smoke note (edited)" --quiet
+"$MAC" notes list --limit 5 | grep -q "mac-cli smoke note"
+"$MAC" notes folders >/dev/null
+"$MAC" notes delete "$NOTE_ID" --quiet
+
 echo "PASS"
