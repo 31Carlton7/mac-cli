@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mac: your Mac's apps, on the command line</title>
-<meta name="description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages and Notes. Native frameworks, millisecond calls, --json on every command, exit codes an agent can branch on. Free and MIT licensed.">
+<meta name="description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Shortcuts and calls. Native frameworks, millisecond calls, --json on every command, exit codes an agent can branch on. Free and MIT licensed.">
 <link rel="canonical" href="https://macoscli.sh/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="mac">
 <meta property="og:title" content="mac: your Mac's apps, on the command line">
-<meta property="og:description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages and Notes. Free and open source.">
+<meta property="og:description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Shortcuts and calls. Free and open source.">
 <meta property="og:url" content="https://macoscli.sh/">
 <meta property="og:image" content="https://macoscli.sh/assets/og.png">
 <meta property="og:image:width" content="2400">
@@ -72,7 +72,7 @@
     font-weight: 500;
     line-height: 1.08;
     letter-spacing: -0.035em;
-    max-width: 15em;
+    max-width: 17em;
     color: var(--ink);
   }
   h1 .rest { color: var(--dim); }
@@ -201,9 +201,9 @@
   .apps {
     padding-top: 56px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
-    max-width: 1160px;
+    max-width: 1280px;
   }
   .app {
     min-width: 0;                 /* let the card shrink to its track so pre scrolls, not the page */
@@ -241,6 +241,9 @@
   footer .fine a { color: var(--body); text-decoration: none; }
   footer .fine a:hover { color: var(--ink); }
 
+  @media (max-width: 1180px) {
+    .apps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   @media (max-width: 860px) {
     .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
@@ -263,7 +266,7 @@
 </header>
 
 <section class="hero rail">
-  <h1><img class="inline-icon" src="/assets/calendar.png" alt="">Calendar, <img class="inline-icon" src="/assets/reminders.png" alt="">Reminders, <img class="inline-icon" src="/assets/contacts.png" alt="">Contacts, <img class="inline-icon" src="/assets/mail.png" alt="">Mail, <img class="inline-icon" src="/assets/messages.png" alt="">Messages and <img class="inline-icon" src="/assets/notes.png" alt="">Notes, on the command line. <span class="rest">One binary, built for AI agents and the humans who drive them. Every command has <code>--json</code>, stable exit codes, and IDs you can trust.</span></h1>
+  <h1><img class="inline-icon" src="/assets/calendar.png" alt="">Calendar, <img class="inline-icon" src="/assets/reminders.png" alt="">Reminders, <img class="inline-icon" src="/assets/contacts.png" alt="">Contacts, <img class="inline-icon" src="/assets/mail.png" alt="">Mail, <img class="inline-icon" src="/assets/messages.png" alt="">Messages, <img class="inline-icon" src="/assets/notes.png" alt="">Notes, <img class="inline-icon" src="/assets/music.png" alt="">Music, <img class="inline-icon" src="/assets/tv.png" alt="">TV, <img class="inline-icon" src="/assets/shortcuts.png" alt="">Shortcuts and <img class="inline-icon" src="/assets/facetime.png" alt="">FaceTime, on the command line. <span class="rest">One binary, built for AI agents and the humans who drive them. Every command has <code>--json</code>, stable exit codes, and IDs you can trust.</span></h1>
   <div class="buttons">
     <span class="cmd">
       <code id="install"><span class="p">❯</span>git clone https://github.com/31Carlton7/mac-cli.git &amp;&amp; cd mac-cli &amp;&amp; make install</code>
@@ -287,7 +290,7 @@
 </div>
 
 <section class="statement rail">
-  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages and Notes go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
+  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
 </section>
 
 <section class="rail">
@@ -328,19 +331,50 @@
       <pre><span class="t-p">❯ </span><span class="t-cmd">mac notes search</span> <span class="t-arg">"brunch"</span>
 <span class="t-p">❯ </span><span class="t-cmd">mac notes append</span> <span class="t-arg">&lt;id&gt; "one more thing"</span></pre>
     </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/music.png" alt=""><h3>Music</h3></div>
+      <p>Playback, search, playlists and star ratings.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac music play</span> <span class="t-arg">--playlist Workout</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac music rate</span> <span class="t-arg">&lt;track-id&gt; 5</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/tv.png" alt=""><h3>TV</h3></div>
+      <p>What's playing, pause, resume, play by id.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac tv list</span> <span class="t-arg">--limit 10</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac tv play</span> <span class="t-arg">&lt;id&gt;</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/shortcuts.png" alt=""><h3>Shortcuts</h3></div>
+      <p>The escape hatch. Anything you can wrap in a Shortcut.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac shortcuts list</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac shortcuts run</span> <span class="t-arg">"Get Weather"</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/facetime.png" alt=""><h3>Calls</h3></div>
+      <p>Initiate only. macOS still asks before it dials.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac call</span> <span class="t-arg">"+1 555 123 4567"</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac facetime</span> <span class="t-arg">user@example.com --audio</span></pre>
+    </div>
   </div>
 </section>
 
-<section class="rail">
-  <h2 class="label">Next</h2>
-  <div class="soon">
-    <span><img src="/assets/music.png" alt="">Music</span>
-    <span><img src="/assets/tv.png" alt="">TV</span>
-    <span><img src="/assets/shortcuts.png" alt="">Shortcuts</span>
-    <span><img src="/assets/facetime.png" alt="">Calls</span>
-  </div>
-  <p class="soon-note">In development for v0.4.0, not in the current release. Shortcuts is the escape hatch: wrap an app that has no scripting surface of its own in a Shortcut, and agents can drive it too.</p>
+<section class="statement rail">
+  <h2>Some apps cannot be scripted at all. <span class="rest">Podcasts, News, Stocks, Maps, Weather and a dozen more expose no automation surface whatsoever, so no tool can drive them directly and <code>mac</code> does not pretend otherwise. The README names every one. For those, wrap the job in a Shortcut and run that instead.</span></h2>
 </section>
+
+<div class="term-band spaced rail">
+  <div class="term">
+    <div class="term-head">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="term-title">mac — zsh</span>
+    </div>
+    <div class="term-body"><pre><span class="t-p">❯ </span><span class="t-cmd">mac shortcuts run</span> <span class="t-arg">"Log Weight" --input 176</span>
+<span class="t-out">logged 176 lb</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac call</span> <span class="t-arg">"+1 555 123 4567" --dry-run</span>
+<span class="t-out">tel:+15551234567</span>
+<span class="t-dim">would open; macOS confirms before dialing</span></pre></div>
+  </div>
+</div>
 
 <section class="statement rail">
   <h2>Built for agents, kind to humans. <span class="rest"><code>--json</code> on every command, with sorted keys, ISO 8601 dates and stable schemas. Mutations take exact IDs only, errors are actionable one-liners on stderr, and exit codes are something an agent can actually branch on.</span></h2>
@@ -381,15 +415,30 @@
       <span class="term-title">mac doctor — zsh</span>
     </div>
     <div class="term-body"><pre><span class="t-p">❯ </span><span class="t-cmd">mac doctor</span>
-<span class="t-dim">✓ Calendar    access granted
-✓ Reminders   access granted
-✓ Contacts    access granted
-✓ Mail        Automation consent granted</span>
-<span class="t-hi">✗ Messages    Full Disk Access missing for Terminal</span>
-<span class="t-dim">              → System Settings › Privacy &amp; Security › Full Disk Access
-✓ Notes       Automation consent granted</span></pre></div>
+<span class="t-dim">✓ Calendar           access granted
+✓ Reminders          access granted
+✓ Contacts           access granted
+✓ Mail               Automation consent granted
+✓ Messages           Automation consent granted
+✓ Notes              Automation consent granted
+✓ Music              Automation consent granted
+✓ TV                 Automation consent granted
+✓ Shortcuts Events   Automation consent granted</span>
+<span class="t-hi">✗ Full Disk Access   missing for Terminal</span>
+<span class="t-dim">                     → System Settings › Privacy &amp; Security › Full Disk Access</span></pre></div>
   </div>
 </div>
+
+<section class="rail">
+  <h2 class="label">Next</h2>
+  <div class="soon">
+    <span><img src="/assets/finder.png" alt="">Finder</span>
+    <span><img src="/assets/keynote.png" alt="">Keynote</span>
+    <span><img src="/assets/pages.png" alt="">Pages</span>
+    <span><img src="/assets/numbers.png" alt="">Numbers</span>
+  </div>
+  <p class="soon-note">Finder lands in v5 and the iWork apps in v6, along with a Homebrew tap. Photos, QuickTime, Preview and TextEdit are all scriptable and on the list after that.</p>
+</section>
 
 <section class="rail">
   <h2 class="label">Install</h2>
@@ -435,9 +484,9 @@
       out: '<span class="t-hi">✓</span> <span class="t-out">added "Dentist" · Thu Aug 28, 2:00–3:00 PM · Personal</span>'
     },
     {
-      cmd: 'mac reminders add "Buy milk" --list Groceries --due "tomorrow 9am"',
-      cmdHtml: '<span class="t-cmd">mac reminders add</span> <span class="t-arg">"Buy milk" --list Groceries --due "tomorrow 9am"</span>',
-      out: '<span class="t-hi">✓</span> <span class="t-out">added "Buy milk" to Groceries · due Thu Aug 28, 9:00 AM</span>'
+      cmd: 'mac music play --playlist Workout',
+      cmdHtml: '<span class="t-cmd">mac music play</span> <span class="t-arg">--playlist Workout</span>',
+      out: '<span class="t-hi">✓</span> <span class="t-out">playing Workout · 42 tracks</span>'
     },
     {
       cmd: 'mac calendar list --from today --to +7d',

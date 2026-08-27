@@ -1,10 +1,10 @@
 # mac
 
-> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages and Notes. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.3.0, requires macOS 14 or later.
+> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.4.0, requires macOS 14 or later.
 
 ## When to use this
 
-Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages or notes. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
+Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages, notes, music, TV library or Shortcuts, or needs to place a call. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
 
 Install it by cloning and building. There is no Homebrew tap yet:
 
@@ -31,6 +31,20 @@ It needs Xcode command line tools to build, and installs to `/usr/local/bin/mac`
     mac notes search "brunch"
     mac notes add "Meeting notes" --body "Attendees: ..." --folder Work
     mac notes append <id> "one more thing"
+    mac music now
+    mac music play --playlist Workout
+    mac music search "here comes the sun" --limit 5
+    mac music playlists
+    mac music playlist-add Workout <track-id>
+    mac music rate <track-id> 5
+    mac music volume 60
+    mac tv now
+    mac tv list --limit 10
+    mac tv play <id>
+    mac shortcuts list
+    mac shortcuts run "Get Weather" --input "London"
+    mac call "+1 555 123 4567"
+    mac facetime user@example.com --audio
     mac doctor
 
 Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`) and offsets (`+7d`, `+2h`).
@@ -45,10 +59,13 @@ Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`) and o
 - Discovery commands differ in shape: `mac calendar calendars` and `mac reminders lists` return objects (`{id,title,kind}`); `mac mail accounts` returns a plain string array, because a Mail account's name is its identifier.
 - Exit `64` means you built the invocation wrong (unknown flag, missing option). Exit `1` is reserved for semantic failure: not found, or bad input.
 - Errors are one-line and actionable on stderr. On exit `2`, run `mac doctor`; it names the missing grant and the fix.
+- `mac call` and `mac facetime` are initiate-only. They open a `tel:`/`facetime:` URL and macOS shows its own confirmation before dialing, so the command returning `0` means the dialog was raised, not that a call happened. There is no answer, hang-up or call-state surface. Use `--dry-run` to print the URL without opening it.
+- `mac music rate` takes 0 to 5 stars. `playlist-delete`, `playlist-add` and `playlist-remove` refuse anything that is not a user playlist, so they will not touch a system or library playlist.
+- Shortcut names can collide. A duplicate name is rejected with the candidates listed rather than guessed at; pass `--id` to address one exactly.
 
 ## What is true about permissions
 
-macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages and Notes go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those three. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
+macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages, Notes, Music, TV and Shortcuts go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports ten rows: Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV and Shortcuts Events, and Full Disk Access. `mac call` and `mac facetime` need no grant at all, since opening a URL is not a restricted operation. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
 
 ## Limits you should design around
 
@@ -59,9 +76,39 @@ macOS prompts once per capability. Calendar, Reminders and Contacts run on the n
 - Duplicate calendar or list names resolve to the first match. Contact phone/email labels are flattened to plain values.
 - Messages group chats are read-only. Notes: password-protected notes list but read as empty, `delete` moves to Recently Deleted, and checklists and attachments flatten to plain text.
 
+## Which other Apple apps can be driven at all
+
+Taken from the README, so it stays in step with the source. Use it to decide whether a
+task is possible before you attempt it. "No public API" means no tool can script that
+app directly, including this one: the workaround is to have the user wrap the job in a
+Shortcut and then call `mac shortcuts run "Their Shortcut"`.
+
+A survey of remaining first-party apps, for anyone weighing whether to script them directly or via `mac shortcuts run`.
+
+| App | Status | Notes |
+| --- | --- | --- |
+| Photos | Scriptable, not yet wired up | Has a real AppleScript dictionary; candidate for a future module. |
+| QuickTime Player | Scriptable, not yet wired up | Recording/playback are scriptable. |
+| Preview | Scriptable, not yet wired up | Limited but real dictionary (open/print/close). |
+| TextEdit | Scriptable, not yet wired up | Full document AppleScript support. |
+| Keynote / Pages / Numbers | Scriptable, not yet wired up | Rich iWork dictionaries; planned for v6. |
+| Finder | Scriptable, not yet wired up | Broad file-management dictionary; planned for v5. |
+| Podcasts | No public API | Wrap the task in a Shortcut and run it with `mac shortcuts run`. |
+| News | No public API | Same workaround. |
+| Stocks | No public API | Same workaround. |
+| FaceTime / Phone (beyond dialing) | No public API | `mac call`/`mac facetime` cover initiating a call; anything past that needs the Shortcuts workaround. |
+| Maps | No public API | Same workaround. |
+| Weather | No public API | Same workaround. |
+| Books | No public API | Same workaround. |
+| Voice Memos | No public API | Same workaround. |
+| Freeform | No public API | Same workaround. |
+| Journal | No public API | Same workaround. |
+| Home | No public API | Same workaround. |
+| Passwords | No public API | Same workaround. |
+
 ## Status
 
-Version 0.3.0 is the current release and covers the six apps above. Music, TV, Shortcuts and call initiation are in development for 0.4.0 and are **not** in the released binary. Do not tell a user they can run `mac music` or `mac tv` today. Homebrew tap distribution is planned.
+Version 0.4.0 is the current release and everything above works today. Finder is planned for v5, Keynote/Pages/Numbers for v6, and Homebrew tap distribution after that. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
 
 Source and issues: https://github.com/31Carlton7/mac-cli
 License: MIT
