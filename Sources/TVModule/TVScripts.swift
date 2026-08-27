@@ -123,6 +123,20 @@ enum TVScripts {
     /// is store-managed and small relative to Mail's mailboxes). Guarded so
     /// k = 0 (empty library) never attempts `tracks 1 thru 0`, which
     /// AppleScript rejects as an invalid range.
+    ///
+    /// Live bug (measured on a library with exactly one `shared track`):
+    /// `tracks 1 thru k of library playlist 1` with k=1 resolves to a BARE
+    /// track reference rather than a list, so indexing it with `item i of`
+    /// fails ("Can't get item 1 of shared track id ..."). `as list` reliably
+    /// coerces PROPERTY VALUES (text/numbers) even when there's only one —
+    /// that's why `ids`/`theNames` below are safe — but it does not coerce
+    /// an OBJECT-SPECIFIER range into an indexable list. So the per-item
+    /// object reference is fetched by re-indexing the container directly
+    /// each iteration (`track i of library playlist 1`) instead of holding
+    /// an object-range variable and indexing into it. Fourth reserved/
+    /// surprising-behavior discovery in this app family, after `st`,
+    /// `names`, and the Notes module's flattened-folder walk: object ranges
+    /// don't coerce to lists the way property-value ranges do.
     static func list(limit: Int) -> String {
         """
         \(prologue)
@@ -132,11 +146,10 @@ enum TVScripts {
                 set k to (count of tracks of library playlist 1)
                 if k > \(limit) then set k to \(limit)
                 if k > 0 then
-                    set theTracks to tracks 1 thru k of library playlist 1
-                    set ids to ((persistent ID of theTracks) as list)
-                    set theNames to ((name of theTracks) as list)
+                    set ids to ((persistent ID of tracks 1 thru k of library playlist 1) as list)
+                    set theNames to ((name of tracks 1 thru k of library playlist 1) as list)
                     repeat with i from 1 to k
-                        set t to item i of theTracks
+                        set t to track i of library playlist 1
                         set kindText to ""
                         try
                             set kindText to (media kind of t) as text

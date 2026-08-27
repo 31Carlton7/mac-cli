@@ -97,4 +97,19 @@ final class TVScriptsTests: XCTestCase {
         let script = TVScripts.list(limit: 50)
         XCTAssertTrue(script.contains("if k > 0 then"))
     }
+
+    /// Live bug (measured on a library with exactly one `shared track`):
+    /// `tracks 1 thru k of library playlist 1` with k=1 resolves to a BARE
+    /// track reference, not a list, so `item 1 of <that reference>` fails
+    /// ("Can't get item 1 of shared track id ..."). The `as list` coercion
+    /// trick is reliable for property-value fetches (text/numbers) but NOT
+    /// for object-specifier results. Fix: index the container directly with
+    /// `track i of library playlist 1` per iteration instead of holding an
+    /// object-range variable and indexing into it.
+    func testListScriptIndexesTracksDirectlyNotViaObjectRange() {
+        let script = TVScripts.list(limit: 10)
+        XCTAssertFalse(script.contains("item i of theTracks"))
+        XCTAssertFalse(script.contains("set theTracks to"))
+        XCTAssertTrue(script.contains("set t to track i of library playlist 1"))
+    }
 }
