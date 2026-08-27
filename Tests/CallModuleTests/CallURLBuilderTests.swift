@@ -50,6 +50,41 @@ final class CallURLBuilderTests: XCTestCase {
         }
     }
 
+    // MARK: telURL boundaries (+ 7-15 digits; bare 3-15 digits)
+
+    func testTelURLAcceptsExactly7DigitsAfterPlus() throws {
+        let url = try CallURLBuilder.telURL(number: "+1234567")
+        XCTAssertEqual(url.absoluteString, "tel:+1234567")
+    }
+
+    func testTelURLRejects6DigitsAfterPlus() {
+        XCTAssertThrowsError(try CallURLBuilder.telURL(number: "+123456")) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+        }
+    }
+
+    func testTelURLAcceptsExactly15DigitsAfterPlus() throws {
+        let url = try CallURLBuilder.telURL(number: "+123456789012345")
+        XCTAssertEqual(url.absoluteString, "tel:+123456789012345")
+    }
+
+    func testTelURLRejects16DigitsAfterPlus() {
+        XCTAssertThrowsError(try CallURLBuilder.telURL(number: "+1234567890123456")) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+        }
+    }
+
+    func testTelURLAcceptsExactly15BareDigits() throws {
+        let url = try CallURLBuilder.telURL(number: "123456789012345")
+        XCTAssertEqual(url.absoluteString, "tel:123456789012345")
+    }
+
+    func testTelURLRejects16BareDigits() {
+        XCTAssertThrowsError(try CallURLBuilder.telURL(number: "1234567890123456")) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+        }
+    }
+
     // MARK: facetimeURL
 
     func testFaceTimeURLBuildsVideoScheme() throws {
@@ -66,5 +101,13 @@ final class CallURLBuilderTests: XCTestCase {
         XCTAssertThrowsError(try CallURLBuilder.facetimeURL(handle: "   ", audio: false)) { error in
             XCTAssertEqual((error as? MacError)?.code, .badInput)
         }
+    }
+
+    // Permissive by design (see the doc comment on facetimeURL): FaceTime handles
+    // aren't restricted to phone-number/email shapes, so any non-empty trimmed
+    // handle is accepted and simply percent-encoded.
+    func testFaceTimeURLAcceptsAndEncodesAnUnusualNonEmptyHandle() throws {
+        let url = try CallURLBuilder.facetimeURL(handle: "weird handle", audio: false)
+        XCTAssertEqual(url.absoluteString, "facetime://weird%20handle")
     }
 }

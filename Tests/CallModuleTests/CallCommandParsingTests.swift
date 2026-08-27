@@ -1,3 +1,4 @@
+import Core
 import Foundation
 import XCTest
 @testable import CallModule
@@ -70,6 +71,18 @@ final class CallCommandParsingTests: XCTestCase {
         await command.run()
 
         XCTAssertEqual(capturedURL?.absoluteString, "tel:+15551234567")
+    }
+
+    // Important-review fix: an `open` failure must surface through the "internal"
+    // JSON envelope (a plain, non-MacError Error), not as a MacError badInput --
+    // it's an environment failure, not a validation problem. withErrorHandling
+    // calls exit() on any error, so this can't be exercised end-to-end through
+    // command.run() without killing the test process; test the failure-building
+    // function directly instead.
+    func testOpenFailureIsNotAMacError() {
+        let error = openFailure(status: 1, url: URL(string: "tel:+15551234567")!)
+        XCTAssertFalse(error is MacError)
+        XCTAssertTrue((error as NSError).localizedDescription.contains("tel:+15551234567"))
     }
 
     func testFaceTimeNonDryRunInvokesInjectedOpenerWithFaceTimeURL() async throws {

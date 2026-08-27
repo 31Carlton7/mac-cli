@@ -2,6 +2,20 @@ import ArgumentParser
 import Core
 import Foundation
 
+/// Builds the error thrown when `open(1)` exits non-zero. Deliberately a plain
+/// NSError, not a MacError: a nonzero exit from the system opener is an
+/// unexpected environment failure (no `open`, no handler registered, sandboxed
+/// out, ...), not a validation problem the caller can fix by rephrasing input.
+/// withErrorHandling's catch-all routes non-MacErrors to the "internal" JSON
+/// envelope / plain "error: ..." line, which is the right shape here.
+func openFailure(status: Int32, url: URL) -> Error {
+    NSError(
+        domain: "CallModule",
+        code: Int(status),
+        userInfo: [NSLocalizedDescriptionKey: "open exited with status \(status) for '\(url.absoluteString)'."]
+    )
+}
+
 /// Default opener: shells out to `/usr/bin/open` rather than linking AppKit's
 /// NSWorkspace. NSWorkspace.shared.open expects a running application with an
 /// event loop and an Info.plist-backed bundle identity; a plain command-line
@@ -15,10 +29,7 @@ func openViaSystemOpen(_ url: URL) throws {
     try process.run()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
-        throw MacError(
-            .badInput,
-            "Failed to open '\(url.absoluteString)' (open exited with status \(process.terminationStatus))."
-        )
+        throw openFailure(status: process.terminationStatus, url: url)
     }
 }
 

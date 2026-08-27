@@ -40,6 +40,13 @@ public enum CallURLBuilder {
     /// Trims the handle, requires it non-empty, percent-encodes it with `.urlHostAllowed`
     /// (so `user@example.com` becomes `user%40example.com`), and builds a
     /// `facetime://` (video) or `facetime-audio://` (audio) URL.
+    ///
+    /// Deliberately permissive: FaceTime accepts both phone numbers and email
+    /// addresses as handles, and Apple doesn't publish a closed grammar for
+    /// either -- "phone number or email" in the contract above describes the
+    /// expected shapes, it isn't a validation rule. Any non-empty trimmed
+    /// handle is accepted and passed through percent-encoding; there's no
+    /// format worth rejecting here that FaceTime itself won't reject better.
     public static func facetimeURL(handle: String, audio: Bool) throws -> URL {
         let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
