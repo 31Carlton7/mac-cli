@@ -28,6 +28,8 @@ struct DoctorCommand: AsyncParsableCommand {
                                bundleID: "com.apple.mail", commandHint: "mail"),
             Self.automationRow("automation:Messages", app: "Messages",
                                bundleID: "com.apple.MobileSMS", commandHint: "messages"),
+            Self.automationRow("automation:Notes", app: "Notes",
+                               bundleID: "com.apple.Notes", commandHint: "notes"),
             Self.fullDiskAccessRow(),
         ], json: output.json)
     }

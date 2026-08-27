@@ -69,7 +69,7 @@ public final class AppleScriptNoteStore: NoteStore {
                             modified: dateFormatter.date(from: fields[5]) ?? Date(timeIntervalSince1970: 0),
                             body: bodyField && fields.count >= 7 ? fields[6] : nil)
         }
-        warnIfDropped(records.count - items.count)
+        warnIfDropped(records.count - items.count, noun: "note")
         return items
     }
 
@@ -83,7 +83,7 @@ public final class AppleScriptNoteStore: NoteStore {
                                 body: nil)
             return NoteSearchRow(item: item, text: fields[6])
         }
-        warnIfDropped(records.count - rows.count)
+        warnIfDropped(records.count - rows.count, noun: "note")
         return rows
     }
 
@@ -93,13 +93,13 @@ public final class AppleScriptNoteStore: NoteStore {
             guard fields.count >= 4, let count = Int(fields[3]) else { return nil }
             return NoteFolderInfo(id: fields[0], name: fields[1], account: fields[2], noteCount: count)
         }
-        warnIfDropped(records.count - folders.count)
+        warnIfDropped(records.count - folders.count, noun: "folder")
         return folders
     }
 
-    static func warnIfDropped(_ dropped: Int) {
+    static func warnIfDropped(_ dropped: Int, noun: String) {
         if dropped > 0 {
-            FileHandle.standardError.write(Data("warning: skipped \(dropped) unparseable note record(s)\n".utf8))
+            FileHandle.standardError.write(Data("warning: skipped \(dropped) unparseable \(noun) record(s)\n".utf8))
         }
     }
 }
