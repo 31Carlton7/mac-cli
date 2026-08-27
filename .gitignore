@@ -2,3 +2,5 @@
 .DS_Store
 *.xcodeproj
 .swiftpm/
+.vercel
+site/node_modules/

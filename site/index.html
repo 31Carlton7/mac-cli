@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mac: your Mac's apps, on the command line</title>
+<meta name="description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages and Notes. Native frameworks, millisecond calls, --json on every command, exit codes an agent can branch on. Free and MIT licensed.">
+<link rel="canonical" href="https://macoscli.sh/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="mac">
+<meta property="og:title" content="mac: your Mac's apps, on the command line">
+<meta property="og:description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages and Notes. Free and open source.">
+<meta property="og:url" content="https://macoscli.sh/">
+<meta property="og:image" content="https://macoscli.sh/assets/og.png">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="The macOS app icons mac drives, above the words: your Mac's apps, on the command line.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@31carlton7">
+<meta name="twitter:creator" content="@31carlton7">
+<meta name="twitter:image" content="https://macoscli.sh/assets/og.png">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="alternate" type="text/markdown" href="/index.md" title="This page as Markdown">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #000000;
+    --surface: #151516;
+    --surface-2: #1f1f21;
+    --surface-3: #2a2a2c;
+    --ink: #f5f5f7;
+    --body: #86868b;
+    --dim: #6e6e73;
+    --arg: #a1a1a6;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  html { background: var(--bg); }
+  body {
+    font-family: "Geist", -apple-system, "system-ui", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--body);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: #2a2a2c; color: #fff; }
+  .rail { padding-left: 5.5%; padding-right: 5.5%; }
+
+  header { padding-top: 28px; display: flex; align-items: center; gap: 10px; }
+  header .mark { width: 26px; height: 26px; display: block; }
+  header .name { font-size: 16px; color: var(--body); }
+  header nav { margin-left: auto; }
+  header nav a { font-size: 15px; color: var(--dim); text-decoration: none; transition: color 0.15s ease; }
+  header nav a:hover { color: var(--ink); }
+
+  .hero { padding-top: 112px; padding-bottom: 64px; }
+  .inline-icon {
+    width: 0.92em; height: 0.92em;
+    vertical-align: -0.13em;
+    margin-right: 0.07em;
+  }
+  h1 {
+    font-size: 54px;
+    font-weight: 500;
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    max-width: 15em;
+    color: var(--ink);
+  }
+  h1 .rest { color: var(--dim); }
+  h1 code {
+    font-family: var(--mono); font-size: 0.82em; font-weight: 500;
+    color: var(--body); letter-spacing: -0.01em;
+  }
+
+  .buttons { display: flex; gap: 8px; margin-top: 44px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 18px;
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 15px; font-weight: 500;
+    text-decoration: none;
+    border-radius: 999px;
+    transition: background 0.15s ease;
+  }
+  .btn:hover { background: var(--surface-3); }
+  .btn.primary { background: #f5f5f7; color: #000; }
+  .btn.primary:hover { background: #fff; }
+  .btn .gh { width: 15px; height: 15px; flex: none; }
+  .btn .arrow { width: 13px; height: 13px; flex: none; }
+
+  .cmd {
+    display: inline-flex; align-items: center; gap: 14px;
+    height: 38px; padding: 0 8px 0 18px;
+    max-width: 100%; min-width: 0;
+    background: var(--surface-2);
+    border-radius: 999px;
+  }
+  .cmd code {
+    display: block; min-width: 0;
+    overflow-x: auto; scrollbar-width: none;
+    font-family: var(--mono);
+    font-size: 14px; color: var(--ink); white-space: nowrap;
+  }
+  .cmd code .p { color: var(--dim); margin-right: 6px; }
+  .cmd code::-webkit-scrollbar { display: none; }
+  .cmd button {
+    flex: none;
+    height: 26px; padding: 0 12px; border: 0; border-radius: 999px;
+    background: var(--surface-3); color: var(--body);
+    font-family: inherit; font-size: 13px; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .cmd button:hover { background: #3a3a3c; color: var(--ink); }
+
+  /* ---- terminal windows ---- */
+  .term-band { padding-top: 40px; max-width: 900px; }
+  .term-band.spaced { padding-top: 110px; }
+  .term {
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .term-head {
+    position: relative;
+    display: flex; align-items: center;
+    height: 44px; padding: 0 18px;
+  }
+  .dots { display: flex; gap: 8px; }
+  .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--surface-3); }
+  .term-title {
+    position: absolute; left: 0; right: 0; text-align: center;
+    font-family: var(--mono); font-size: 12px; color: var(--dim);
+    pointer-events: none;
+  }
+  .term-body {
+    padding: 6px 22px 26px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.8;
+    color: var(--body);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .term-body::-webkit-scrollbar { display: none; }
+  .term-body pre { font: inherit; white-space: pre; }
+  #demo { min-height: 18em; }   /* height of the finished session, so typing never reflows the page */
+  .t-p { color: var(--dim); }
+  .t-cmd { color: var(--ink); }
+  .t-arg { color: var(--arg); }
+  .t-out { color: var(--body); }
+  .t-dim { color: var(--dim); }
+  .t-hi { color: var(--ink); }
+  .caret {
+    display: inline-block; width: 7px; height: 15px;
+    background: var(--ink); vertical-align: -2px;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+
+  .label { padding-top: 110px; font-size: 16px; font-weight: 400; color: var(--body); }
+
+  .statement { padding-top: 120px; }
+  .statement h2 {
+    font-size: 32px; font-weight: 500;
+    line-height: 1.25; letter-spacing: -0.02em;
+    max-width: 23em;
+    color: var(--ink);
+  }
+  .statement h2 .rest { color: var(--dim); }
+  .statement h2 code {
+    font-family: var(--mono); font-size: 0.84em;
+    color: var(--body);
+  }
+
+  /* exit codes */
+  .codes {
+    margin-top: 40px;
+    display: flex; flex-wrap: wrap; gap: 8px;
+    font-family: var(--mono); font-size: 13.5px;
+  }
+  .codes span {
+    display: inline-flex; align-items: center; gap: 10px;
+    height: 34px; padding: 0 16px;
+    background: var(--surface); border-radius: 999px;
+    color: var(--dim);
+  }
+  .codes b { font-weight: 500; color: var(--ink); }
+
+  /* app grid */
+  .apps {
+    padding-top: 56px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    max-width: 1160px;
+  }
+  .app {
+    min-width: 0;                 /* let the card shrink to its track so pre scrolls, not the page */
+    border-radius: 16px;
+    padding: 24px 22px 22px;
+    background: var(--surface);
+    transition: background 0.2s ease;
+  }
+  .app:hover { background: var(--surface-2); }
+  .app-head { display: flex; align-items: center; gap: 10px; }
+  .app-head img { width: 28px; height: 28px; }
+  .app-head h3 { font-size: 16px; font-weight: 500; color: var(--ink); letter-spacing: -0.01em; }
+  .app p { margin-top: 10px; font-size: 14.5px; line-height: 1.5; color: var(--dim); }
+  .app pre {
+    margin-top: 16px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 2;
+    color: var(--body);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .app pre::-webkit-scrollbar { display: none; }
+
+  /* roadmap: not shipped, and it says so */
+  .soon { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .soon span {
+    display: inline-flex; align-items: center; gap: 9px;
+    height: 40px; padding: 0 18px 0 14px;
+    background: var(--surface); border-radius: 999px;
+    font-size: 15px; color: var(--body);
+  }
+  .soon span img { width: 22px; height: 22px; opacity: 0.75; }
+  .soon-note { margin-top: 20px; font-size: 15px; color: var(--dim); max-width: 42em; }
+
+  footer { padding-top: 140px; padding-bottom: 72px; }
+  footer .fine { margin-top: 44px; font-size: 15px; color: var(--dim); }
+  footer .fine a { color: var(--body); text-decoration: none; }
+  footer .fine a:hover { color: var(--ink); }
+
+  @media (max-width: 860px) {
+    .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    h1 { font-size: 36px; letter-spacing: -0.025em; }
+    .statement h2 { font-size: 25px; }
+    .apps { grid-template-columns: 1fr; }
+    .hero { padding-top: 72px; }
+    .cmd code { font-size: 12.5px; }
+    .term-body { font-size: 12px; padding: 4px 16px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="rail">
+  <img class="mark" src="/assets/favicon.svg" alt="" width="26" height="26">
+  <span class="name">mac</span>
+  <nav><a href="https://github.com/31Carlton7/mac-cli">GitHub</a></nav>
+</header>
+
+<section class="hero rail">
+  <h1><img class="inline-icon" src="/assets/calendar.png" alt="">Calendar, <img class="inline-icon" src="/assets/reminders.png" alt="">Reminders, <img class="inline-icon" src="/assets/contacts.png" alt="">Contacts, <img class="inline-icon" src="/assets/mail.png" alt="">Mail, <img class="inline-icon" src="/assets/messages.png" alt="">Messages and <img class="inline-icon" src="/assets/notes.png" alt="">Notes, on the command line. <span class="rest">One binary, built for AI agents and the humans who drive them. Every command has <code>--json</code>, stable exit codes, and IDs you can trust.</span></h1>
+  <div class="buttons">
+    <span class="cmd">
+      <code id="install"><span class="p">❯</span>git clone https://github.com/31Carlton7/mac-cli.git &amp;&amp; cd mac-cli &amp;&amp; make install</code>
+      <button onclick="copyCmd(this)">Copy</button>
+    </span>
+    <a class="btn" href="https://github.com/31Carlton7/mac-cli">
+      <svg class="gh" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+</section>
+
+<div class="term-band rail">
+  <div class="term">
+    <div class="term-head">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="term-title">mac — zsh</span>
+    </div>
+    <div class="term-body"><pre id="demo" aria-label="A terminal session using the mac CLI"></pre></div>
+  </div>
+</div>
+
+<section class="statement rail">
+  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages and Notes go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
+</section>
+
+<section class="rail">
+  <div class="apps">
+    <div class="app">
+      <div class="app-head"><img src="/assets/calendar.png" alt=""><h3>Calendar</h3></div>
+      <p>Dates take ISO, naturals and offsets.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac calendar list</span> <span class="t-arg">--from today --to +7d</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac calendar add</span> <span class="t-arg">"Dentist" --at "tomorrow 2pm"</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/reminders.png" alt=""><h3>Reminders</h3></div>
+      <p>Add, complete and edit across every list.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac reminders add</span> <span class="t-arg">"Buy milk" --list Groceries</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac reminders complete</span> <span class="t-arg">&lt;id&gt;</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/contacts.png" alt=""><h3>Contacts</h3></div>
+      <p>Resolve a name to a handle before you send.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac contacts find</span> <span class="t-arg">"Sarah"</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac contacts find</span> <span class="t-arg">"Sarah" --json</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/mail.png" alt=""><h3>Mail</h3></div>
+      <p>Drafting is preferred over sending, by design.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac mail unread</span> <span class="t-arg">--limit 10</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac mail draft</span> <span class="t-arg">--to a@b.com --subject "Hi"</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/messages.png" alt=""><h3>Messages</h3></div>
+      <p>Read history, send texts. Exact handles only.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac messages history</span> <span class="t-arg">+15551234567</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac messages send</span> <span class="t-arg">+1555… "On my way"</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/notes.png" alt=""><h3>Notes</h3></div>
+      <p>List, search, add and append by folder.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac notes search</span> <span class="t-arg">"brunch"</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac notes append</span> <span class="t-arg">&lt;id&gt; "one more thing"</span></pre>
+    </div>
+  </div>
+</section>
+
+<section class="rail">
+  <h2 class="label">Next</h2>
+  <div class="soon">
+    <span><img src="/assets/music.png" alt="">Music</span>
+    <span><img src="/assets/tv.png" alt="">TV</span>
+    <span><img src="/assets/shortcuts.png" alt="">Shortcuts</span>
+    <span><img src="/assets/facetime.png" alt="">Calls</span>
+  </div>
+  <p class="soon-note">In development for v0.4.0, not in the current release. Shortcuts is the escape hatch: wrap an app that has no scripting surface of its own in a Shortcut, and agents can drive it too.</p>
+</section>
+
+<section class="statement rail">
+  <h2>Built for agents, kind to humans. <span class="rest"><code>--json</code> on every command, with sorted keys, ISO 8601 dates and stable schemas. Mutations take exact IDs only, errors are actionable one-liners on stderr, and exit codes are something an agent can actually branch on.</span></h2>
+  <div class="codes" aria-label="Exit codes">
+    <span><b>0</b> success</span>
+    <span><b>1</b> not found</span>
+    <span><b>2</b> permission denied</span>
+    <span><b>64</b> usage error</span>
+  </div>
+</section>
+
+<div class="term-band spaced rail">
+  <div class="term">
+    <div class="term-head">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="term-title">mac — zsh</span>
+    </div>
+    <div class="term-body"><pre><span class="t-p">❯ </span><span class="t-cmd">mac contacts find</span> <span class="t-arg">"Sarah" --json</span>
+<span class="t-out">{
+  "emails": ["sarah@example.com"],
+  "id": "AB1C2D3E-4F56-7890-A1B2-C3D4E5F6A7B8",
+  "name": "Sarah Chen",
+  "phones": ["+15551234567"]
+}</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac messages send</span> <span class="t-arg">+15551234567 "Brunch at 11?"</span>
+<span class="t-hi">✓</span> <span class="t-out">sent to +15551234567</span></pre></div>
+  </div>
+</div>
+
+<section class="statement rail">
+  <h2>Permissions, diagnosed. <span class="rest">macOS prompts once per capability, and <code>mac doctor</code> reports every grant (Calendar, Reminders and Contacts access, Automation consent, Full Disk Access) with fix steps when something is missing. No silent failures, no mystery errors.</span></h2>
+</section>
+
+<div class="term-band spaced rail">
+  <div class="term">
+    <div class="term-head">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="term-title">mac doctor — zsh</span>
+    </div>
+    <div class="term-body"><pre><span class="t-p">❯ </span><span class="t-cmd">mac doctor</span>
+<span class="t-dim">✓ Calendar    access granted
+✓ Reminders   access granted
+✓ Contacts    access granted
+✓ Mail        Automation consent granted</span>
+<span class="t-hi">✗ Messages    Full Disk Access missing for Terminal</span>
+<span class="t-dim">              → System Settings › Privacy &amp; Security › Full Disk Access
+✓ Notes       Automation consent granted</span></pre></div>
+  </div>
+</div>
+
+<section class="rail">
+  <h2 class="label">Install</h2>
+  <div class="buttons" style="margin-top: 24px;">
+    <span class="cmd">
+      <code id="clone"><span class="p">❯</span>git clone https://github.com/31Carlton7/mac-cli.git &amp;&amp; cd mac-cli &amp;&amp; make install</code>
+      <button onclick="copyCmd(this)">Copy</button>
+    </span>
+  </div>
+  <div class="buttons" style="margin-top: 8px;">
+    <span class="cmd">
+      <code id="doctor"><span class="p">❯</span>mac doctor</code>
+      <button onclick="copyCmd(this)">Copy</button>
+    </span>
+    <a class="btn" href="https://github.com/31Carlton7/mac-cli">
+      <svg class="gh" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+</section>
+
+<footer class="rail">
+  <a class="btn primary" href="https://github.com/31Carlton7/mac-cli">
+    Get mac on GitHub
+    <svg class="arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>
+  </a>
+  <p class="fine">mac is free and <a href="https://github.com/31Carlton7/mac-cli/blob/master/LICENSE">MIT licensed</a>, made by <a href="https://carltonaikins.com">Carlton Aikins</a> · <a href="https://github.com/31Carlton7/mac-cli">GitHub</a> · Requires macOS 14+ and Xcode command line tools</p>
+</footer>
+
+<script>
+  function copyCmd(btn) {
+    const code = btn.parentElement.querySelector('code');
+    navigator.clipboard.writeText(code.textContent.replace(/^❯\s*/, ''));
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+  }
+
+  // Hero terminal: type each command, print its output, end on a blinking prompt.
+  const scenes = [
+    {
+      cmd: 'mac calendar add "Dentist" --at "tomorrow 2pm" --duration 1h',
+      cmdHtml: '<span class="t-cmd">mac calendar add</span> <span class="t-arg">"Dentist" --at "tomorrow 2pm" --duration 1h</span>',
+      out: '<span class="t-hi">✓</span> <span class="t-out">added "Dentist" · Thu Aug 28, 2:00–3:00 PM · Personal</span>'
+    },
+    {
+      cmd: 'mac reminders add "Buy milk" --list Groceries --due "tomorrow 9am"',
+      cmdHtml: '<span class="t-cmd">mac reminders add</span> <span class="t-arg">"Buy milk" --list Groceries --due "tomorrow 9am"</span>',
+      out: '<span class="t-hi">✓</span> <span class="t-out">added "Buy milk" to Groceries · due Thu Aug 28, 9:00 AM</span>'
+    },
+    {
+      cmd: 'mac calendar list --from today --to +7d',
+      cmdHtml: '<span class="t-cmd">mac calendar list</span> <span class="t-arg">--from today --to +7d</span>',
+      out: '<span class="t-out">Wed Aug 27   09:30–10:00   Standup             Work\n' +
+           'Thu Aug 28   14:00–15:00   Dentist             Personal\n' +
+           'Sat Aug 30   11:00–13:00   Brunch with Sarah   Personal</span>'
+    }
+  ];
+
+  const demo = document.getElementById('demo');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const PROMPT = '<span class="t-p">❯ </span>';
+  let done = '';
+
+  function renderStatic() {
+    demo.innerHTML = scenes.map(s => PROMPT + s.cmdHtml + '\n' + s.out).join('\n') +
+      '\n' + PROMPT + '<span class="caret"></span>';
+  }
+
+  function typeScene(i) {
+    if (i >= scenes.length) {
+      demo.innerHTML = done + PROMPT + '<span class="caret"></span>';
+      return;
+    }
+    const s = scenes[i];
+    let n = 0;
+    const tick = () => {
+      n++;
+      demo.innerHTML = done + PROMPT + escapeHtml(s.cmd.slice(0, n)) + '<span class="caret"></span>';
+      if (n < s.cmd.length) {
+        setTimeout(tick, 16 + Math.random() * 40);
+      } else {
+        setTimeout(() => {
+          done += PROMPT + s.cmdHtml + '\n' + s.out + '\n';
+          demo.innerHTML = done + PROMPT + '<span class="caret"></span>';
+          setTimeout(() => typeScene(i + 1), 650);
+        }, 320);
+      }
+    };
+    tick();
+  }
+
+  function escapeHtml(t) {
+    return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  demo.innerHTML = PROMPT + '<span class="caret"></span>';
+
+  if (reduced) {
+    renderStatic();
+  } else {
+    let started = false;
+    const start = () => { if (!started) { started = true; setTimeout(() => typeScene(0), 500); } };
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting)) { start(); io.disconnect(); }
+      });
+      io.observe(demo.closest('.term'));
+    } else { start(); }
+  }
+</script>
+
+</body>
+</html>

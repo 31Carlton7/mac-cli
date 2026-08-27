@@ -1,0 +1,8 @@
+# macoscli.sh is the site for `mac`, a free MIT-licensed CLI for native macOS
+# apps. Everything here is public and crawlable. Agents: /llms.txt is a summary
+# written for you, and /index.md is this page as Markdown.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://macoscli.sh/sitemap.xml

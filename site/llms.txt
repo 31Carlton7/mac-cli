@@ -1,0 +1,67 @@
+# mac
+
+> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages and Notes. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.3.0, requires macOS 14 or later.
+
+## When to use this
+
+Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages or notes. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
+
+Install it by cloning and building. There is no Homebrew tap yet:
+
+    git clone https://github.com/31Carlton7/mac-cli.git && cd mac-cli && make install
+
+It needs Xcode command line tools to build, and installs to `/usr/local/bin/mac`.
+
+## The command surface
+
+    mac calendar list --from today --to +7d
+    mac calendar add "Dentist" --at "tomorrow 2pm" --duration 1h
+    mac calendar calendars
+    mac reminders add "Buy milk" --list Groceries --due "tomorrow 9am"
+    mac reminders complete <id>
+    mac reminders lists
+    mac contacts find "Sarah"
+    mac mail accounts
+    mac mail unread --limit 10
+    mac mail search "invoice"
+    mac mail draft --to a@b.com --subject "Hi" --body "..."
+    mac messages history +15551234567
+    mac messages send +15551234567 "Running 10 min late"
+    mac notes list --folder Ideas
+    mac notes search "brunch"
+    mac notes add "Meeting notes" --body "Attendees: ..." --folder Work
+    mac notes append <id> "one more thing"
+    mac doctor
+
+Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`) and offsets (`+7d`, `+2h`).
+
+## Rules that matter if you are an agent
+
+- Add `--json` to anything you intend to parse. It prints even under `--quiet`, which suppresses only the human-readable output.
+- Mutations (`edit`, `delete`, `complete`, `mark-read`, `archive`) take exact IDs only. Get IDs from `list` or `find` first; never construct one.
+- `mac messages send` takes an exact handle and does no normalization. Resolve a name with `mac contacts find` before sending.
+- Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
+- A successful `mac messages send` is not proof of delivery. Messages accepts sends to handles never registered with iMessage without a synchronous error. Read the thread back with `mac messages history` to confirm.
+- Discovery commands differ in shape: `mac calendar calendars` and `mac reminders lists` return objects (`{id,title,kind}`); `mac mail accounts` returns a plain string array, because a Mail account's name is its identifier.
+- Exit `64` means you built the invocation wrong (unknown flag, missing option). Exit `1` is reserved for semantic failure: not found, or bad input.
+- Errors are one-line and actionable on stderr. On exit `2`, run `mac doctor`; it names the missing grant and the fix.
+
+## What is true about permissions
+
+macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages and Notes go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those three. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
+
+## Limits you should design around
+
+- Mail reads are windowed. Every read examines only the newest `--scan` messages (default 30, max 500) per account inbox; older mail is invisible. Cost scales with messages touched: roughly 0.15s each on a small account and ~1.5s each on a 50k-message one, so keep `--scan` small on big mailboxes. Search matches subject and sender only, within that same window.
+- Without `--account`, `mac mail unread` is a fast sample rather than a global newest-N: accounts are scanned smallest-inbox-first and scanning stops once `--limit` fills. Pass `--account` when you need determinism.
+- Recurring events share one ID across occurrences; `edit` and `delete` act on the series master.
+- Edit flags replace values and cannot clear to nil. A due date, once set, cannot be removed. Notes, location and org can be blanked with an empty string; names and titles cannot.
+- Duplicate calendar or list names resolve to the first match. Contact phone/email labels are flattened to plain values.
+- Messages group chats are read-only. Notes: password-protected notes list but read as empty, `delete` moves to Recently Deleted, and checklists and attachments flatten to plain text.
+
+## Status
+
+Version 0.3.0 is the current release and covers the six apps above. Music, TV, Shortcuts and call initiation are in development for 0.4.0 and are **not** in the released binary. Do not tell a user they can run `mac music` or `mac tv` today. Homebrew tap distribution is planned.
+
+Source and issues: https://github.com/31Carlton7/mac-cli
+License: MIT
