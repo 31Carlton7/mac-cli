@@ -56,6 +56,14 @@ enum NoteScripts {
             with timeout of 600 seconds
                 repeat with a in accounts
                     set acctName to name of a
+                    -- On real macOS, `folders of a` already returns the account's
+                    -- folder tree flattened (subfolders included). The queue walk
+                    -- below (folders of f, appended per iteration) is kept as
+                    -- insurance for any macOS version that enumerates strictly one
+                    -- level, but on the flattened case it double-visits every
+                    -- nested subfolder (and, in notes(), that folder's notes).
+                    -- AppleScriptNoteStore dedupes the parsed rows by id to stay
+                    -- correct under either enumeration semantics.
                     set queue to (folders of a) as list
                     repeat while (count of queue) > 0
                         set f to item 1 of queue

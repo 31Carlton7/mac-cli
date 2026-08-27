@@ -68,40 +68,57 @@ public final class AppleScriptNoteStore: NoteStore {
 
     // MARK: - Parsing (static, unit-tested)
 
+    // On real macOS, `folders of <account>` already returns the account's
+    // folder tree flattened (subfolders included), so NoteScripts' defensive
+    // queue walk (kept as insurance for any macOS version that enumerates
+    // strictly one level) double-visits every nested subfolder and its notes.
+    // Dedupe by id here, keeping the first occurrence; duplicates are tracked
+    // separately from structurally malformed rows so they don't inflate the
+    // warnIfDropped count.
+
     static func items(from output: String, bodyField: Bool = false) -> [NoteItem] {
         let records = AppleScript.parseRecords(output)
+        var seen = Set<String>()
+        var malformed = 0
         let items = records.compactMap { fields -> NoteItem? in
-            guard fields.count >= 6 else { return nil }
+            guard fields.count >= 6 else { malformed += 1; return nil }
+            guard seen.insert(fields[0]).inserted else { return nil }
             return NoteItem(id: fields[0], title: fields[1], folder: fields[2], account: fields[3],
                             created: dateFormatter.date(from: fields[4]) ?? Date(timeIntervalSince1970: 0),
                             modified: dateFormatter.date(from: fields[5]) ?? Date(timeIntervalSince1970: 0),
                             body: bodyField && fields.count >= 7 ? fields[6] : nil)
         }
-        warnIfDropped(records.count - items.count, noun: "note")
+        warnIfDropped(malformed, noun: "note")
         return items
     }
 
     static func parseSearchRows(from output: String) -> [NoteSearchRow] {
         let records = AppleScript.parseRecords(output)
+        var seen = Set<String>()
+        var malformed = 0
         let rows = records.compactMap { fields -> NoteSearchRow? in
-            guard fields.count >= 7 else { return nil }
+            guard fields.count >= 7 else { malformed += 1; return nil }
+            guard seen.insert(fields[0]).inserted else { return nil }
             let item = NoteItem(id: fields[0], title: fields[1], folder: fields[2], account: fields[3],
                                 created: dateFormatter.date(from: fields[4]) ?? Date(timeIntervalSince1970: 0),
                                 modified: dateFormatter.date(from: fields[5]) ?? Date(timeIntervalSince1970: 0),
                                 body: nil)
             return NoteSearchRow(item: item, text: fields[6])
         }
-        warnIfDropped(records.count - rows.count, noun: "note")
+        warnIfDropped(malformed, noun: "note")
         return rows
     }
 
     static func folderInfos(from output: String) -> [NoteFolderInfo] {
         let records = AppleScript.parseRecords(output)
+        var seen = Set<String>()
+        var malformed = 0
         let folders = records.compactMap { fields -> NoteFolderInfo? in
-            guard fields.count >= 4, let count = Int(fields[3]) else { return nil }
+            guard fields.count >= 4, let count = Int(fields[3]) else { malformed += 1; return nil }
+            guard seen.insert(fields[0]).inserted else { return nil }
             return NoteFolderInfo(id: fields[0], name: fields[1], account: fields[2], noteCount: count)
         }
-        warnIfDropped(records.count - folders.count, noun: "folder")
+        warnIfDropped(malformed, noun: "folder")
         return folders
     }
 
