@@ -1,5 +1,7 @@
 # mac
 
+**[macoscli.sh](https://macoscli.sh)**
+
 An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail, Messages, Notes, Music, TV, and Shortcuts use AppleScript (and a read-only Messages database), since Apple ships no public APIs for them.
 
 Built for AI agents (Claude Code, etc.) and the humans who drive them: every command has `--json`, stable exit codes, and `--help` with examples.
