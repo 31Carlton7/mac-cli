@@ -20,7 +20,7 @@ macOS will prompt once per capability (Calendar, Reminders, Contacts) the first 
 mac doctor
 ```
 
-Mail, Messages, and Notes additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
+Mail, Messages, Notes, Music, TV, and Shortcuts additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
 
 ## Usage
 
