@@ -1,6 +1,6 @@
 # mac
 
-An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail, Messages, and Notes use AppleScript and a read-only Messages database, since Apple ships no public APIs for them.
+An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail, Messages, Notes, Music, TV, and Shortcuts use AppleScript (and a read-only Messages database), since Apple ships no public APIs for them.
 
 Built for AI agents (Claude Code, etc.) and the humans who drive them: every command has `--json`, stable exit codes, and `--help` with examples.
 
@@ -40,6 +40,14 @@ mac notes list --folder Ideas
 mac notes search "brunch"
 mac notes add "Meeting notes" --body "Attendees: ..." --folder Work
 mac notes append <id> "one more thing"
+mac music play --playlist Workout
+mac music search "here comes the sun" --limit 5
+mac music playlist-add Workout <trackID>
+mac tv list --limit 10
+mac tv play <id>
+mac shortcuts run "Get Weather"
+mac call "+1 555 123 4567"
+mac facetime user@example.com --audio
 ```
 
 Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`), and offsets (`+7d`, `+2h`).
@@ -55,6 +63,8 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
 - Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
 - `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
+- `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
+- `mac shortcuts run` is the escape hatch for unscriptable apps: wrap the task in a Shortcut and run it by name or id.
 
 ## Known limitations
 
@@ -73,10 +83,38 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `mac messages send` requires an exact handle — it does no normalization.
 - **A successful `mac messages send` is not proof of delivery.** Messages accepts sends to handles that were never registered with iMessage (typos, SMS-only contacts) without a synchronous error. Verify by reading the thread back with `mac messages history`.
 - Notes: password-protected notes appear in listings but their bodies read as empty; `delete` moves to Recently Deleted (recoverable) rather than erasing; folder names are resolved per-name, so duplicates across accounts need `--account`; checklists and attachments flatten to plain text.
+- **`mac music search`/`mac music playlists` see your library, not the Apple Music catalog.** Songs you haven't added won't turn up in search, and Apple Music's `whose`-based library search is unusable at scale (the same measured cost that ruled out `whose` for Mail) — `mac music` and `mac tv` resolve a track/playlist by id via the one sanctioned `whose persistent ID is "<id>"` lookup, run under a 30s timeout, since that shape stayed fast in measurement.
+- `mac shortcuts run` blocks until the shortcut finishes; a shortcut that shows its own dialogs or waits on user input will hang the command until that shortcut completes.
+- `mac call`/`mac facetime` only open a `tel:`/`facetime:` URL — they never place the call themselves; macOS still asks you to confirm before dialing.
+
+## Scriptability of other Apple apps
+
+A survey of remaining first-party apps, for anyone weighing whether to script them directly or via `mac shortcuts run`.
+
+| App | Status | Notes |
+| --- | --- | --- |
+| Photos | Scriptable, not yet wired up | Has a real AppleScript dictionary; candidate for a future module. |
+| QuickTime Player | Scriptable, not yet wired up | Recording/playback are scriptable. |
+| Preview | Scriptable, not yet wired up | Limited but real dictionary (open/print/close). |
+| TextEdit | Scriptable, not yet wired up | Full document AppleScript support. |
+| Keynote / Pages / Numbers | Scriptable, not yet wired up | Rich iWork dictionaries; planned for v6. |
+| Finder | Scriptable, not yet wired up | Broad file-management dictionary; planned for v5. |
+| Podcasts | No public API | Wrap the task in a Shortcut and run it with `mac shortcuts run`. |
+| News | No public API | Same workaround. |
+| Stocks | No public API | Same workaround. |
+| FaceTime / Phone (beyond dialing) | No public API | `mac call`/`mac facetime` cover initiating a call; anything past that needs the Shortcuts workaround. |
+| Maps | No public API | Same workaround. |
+| Weather | No public API | Same workaround. |
+| Books | No public API | Same workaround. |
+| Voice Memos | No public API | Same workaround. |
+| Freeform | No public API | Same workaround. |
+| Journal | No public API | Same workaround. |
+| Home | No public API | Same workaround. |
+| Passwords | No public API | Same workaround. |
 
 ## Roadmap
 
-Homebrew tap distribution.
+Finder (v5), iWork — Keynote/Pages/Numbers (v6), Homebrew tap.
 
 ## License
 

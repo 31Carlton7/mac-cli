@@ -80,4 +80,47 @@ NOTE_ID=$("$MAC" notes add "mac-cli smoke note" --body "created by smoke" --json
 "$MAC" notes folders >/dev/null
 "$MAC" notes delete "$NOTE_ID" --quiet
 
+echo "== music =="
+"$MAC" music now >/dev/null
+"$MAC" music playlists >/dev/null
+# json_field expects a JSON object; search returns an array, so pull [0]["id"]
+# with python directly. Tolerates an empty match (empty library, or nothing
+# matches "a") by leaving TRACK_ID unset rather than failing the whole script.
+TRACK_ID=$("$MAC" music search "a" --limit 1 --json | /usr/bin/python3 -c '
+import json, sys
+raw = sys.stdin.read()
+try:
+    items = json.loads(raw)
+    print(items[0]["id"])
+except (ValueError, IndexError, KeyError, TypeError):
+    pass
+' || true)
+PL_ID=$("$MAC" music playlist-create "mac-cli smoke playlist" --json | json_field id)
+if [ -n "$TRACK_ID" ]; then
+  "$MAC" music playlist-add "mac-cli smoke playlist" "$TRACK_ID" --quiet
+  "$MAC" music playlist-remove "mac-cli smoke playlist" "$TRACK_ID" --quiet
+  # Delete-semantics live check (Task 3's review): playlist-remove must only
+  # unlink the track from the playlist, not delete it from the library --
+  # re-run the same search and confirm the same track id still resolves.
+  "$MAC" music search "a" --limit 1 --json | /usr/bin/python3 -c '
+import json, sys
+raw = sys.stdin.read()
+items = json.loads(raw)
+assert items and items[0]["id"] == "'"$TRACK_ID"'", "smoke: track vanished from the library after playlist-remove"
+'
+else
+  echo "   (no track matched \"a\" in the library -- skipping playlist-add/remove)"
+fi
+"$MAC" music playlist-delete "mac-cli smoke playlist" --quiet
+
+echo "== tv =="
+"$MAC" tv list --limit 3 >/dev/null
+
+echo "== shortcuts =="
+"$MAC" shortcuts list >/dev/null
+
+echo "== call (dry-run only -- never dials) =="
+"$MAC" call "+15551234567" --dry-run | grep -q "tel:+15551234567"
+"$MAC" facetime "smoke@example.com" --dry-run --audio | grep -q "facetime-audio://"
+
 echo "PASS"

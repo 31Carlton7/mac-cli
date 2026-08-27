@@ -30,6 +30,12 @@ struct DoctorCommand: AsyncParsableCommand {
                                bundleID: "com.apple.MobileSMS", commandHint: "messages"),
             Self.automationRow("automation:Notes", app: "Notes",
                                bundleID: "com.apple.Notes", commandHint: "notes"),
+            Self.automationRow("automation:Music", app: "Music",
+                               bundleID: "com.apple.Music", commandHint: "music"),
+            Self.automationRow("automation:TV", app: "TV",
+                               bundleID: "com.apple.TV", commandHint: "tv"),
+            Self.automationRow("automation:Shortcuts", app: "Shortcuts Events",
+                               bundleID: "com.apple.shortcuts.events", commandHint: "shortcuts run"),
             Self.fullDiskAccessRow(),
         ], json: output.json)
     }
