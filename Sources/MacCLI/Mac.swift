@@ -2,6 +2,7 @@ import ArgumentParser
 import CalendarModule
 import CallModule
 import ContactsModule
+import FinderModule
 import MailModule
 import MessagesModule
 import MusicModule
@@ -14,8 +15,8 @@ import TVModule
 struct Mac: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "mac",
-        abstract: "Agent-friendly CLI for native macOS apps (Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Shortcuts, Call, FaceTime).",
+        abstract: "Agent-friendly CLI for native macOS apps (Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Shortcuts, Call, FaceTime, Finder).",
         version: "0.4.0",
-        subcommands: [CalendarCommand.self, RemindersCommand.self, ContactsCommand.self, MailCommand.self, MessagesCommand.self, NotesCommand.self, MusicCommand.self, TVCommand.self, ShortcutsCommand.self, CallCommand.self, FaceTimeCommand.self, DoctorCommand.self]
+        subcommands: [CalendarCommand.self, RemindersCommand.self, ContactsCommand.self, MailCommand.self, MessagesCommand.self, NotesCommand.self, MusicCommand.self, TVCommand.self, ShortcutsCommand.self, CallCommand.self, FaceTimeCommand.self, FinderCommand.self, DoctorCommand.self]
     )
 }

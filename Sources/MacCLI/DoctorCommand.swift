@@ -36,6 +36,8 @@ struct DoctorCommand: AsyncParsableCommand {
                                bundleID: "com.apple.TV", commandHint: "tv"),
             Self.automationRow("automation:Shortcuts", app: "Shortcuts Events",
                                bundleID: "com.apple.shortcuts.events", commandHint: "shortcuts run"),
+            Self.automationRow("automation:Finder", app: "Finder",
+                               bundleID: "com.apple.finder", commandHint: "finder"),
             Self.fullDiskAccessRow(),
         ], json: output.json)
     }

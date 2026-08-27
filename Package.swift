@@ -27,7 +27,7 @@ let package = Package(
         .target(name: "FinderModule", dependencies: ["Core"]),
         .executableTarget(
             name: "MacCLI",
-            dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule", "MusicModule", "TVModule", "ShortcutsModule", "CallModule"],
+            dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule", "MusicModule", "TVModule", "ShortcutsModule", "CallModule", "FinderModule"],
             exclude: ["Info.plist"],
             linkerSettings: [
                 .unsafeFlags([
