@@ -141,6 +141,24 @@ final class MusicActionsTests: XCTestCase {
         XCTAssertTrue(store.resumeCalled)
     }
 
+    func testPlayByAmbiguousNameListsSortedCappedFiveCandidates() async {
+        // Insertion order deliberately differs from sorted order, and there are more than
+        // 5 matches, so the fix must sort before capping rather than capping insertion order.
+        store.storedPlaylists = ["p9", "p3", "p7", "p1", "p5", "p2"].map {
+            PlaylistInfo(id: $0, name: "Dup", trackCount: 0, kind: "user")
+        }
+        do {
+            try await actions.play(playlist: "dup", trackID: nil)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            for id in ["p1", "p2", "p3", "p5", "p7"] {
+                XCTAssertTrue(error.message.contains(id), "expected message to contain \(id): \(error.message)")
+            }
+            XCTAssertFalse(error.message.contains("p9"), "expected message to omit p9: \(error.message)")
+        } catch { XCTFail("wrong error type") }
+    }
+
     func testPlayByAmbiguousNameThrowsBadInputListingBothIDs() async {
         do {
             try await actions.play(playlist: "chill", trackID: nil)

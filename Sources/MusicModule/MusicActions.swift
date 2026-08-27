@@ -130,14 +130,21 @@ public struct MusicActions {
             throw MacError(.notFound, "No playlist named '\(nameOrID)'. Run: mac music playlists")
         }
         if matches.count > 1 {
-            let candidates = matches.prefix(5).map { "\($0.name) (\($0.id))" }.joined(separator: ", ")
+            // Sort name-then-id before capping so the candidate list is deterministic
+            // regardless of store insertion order (repo-wide "sorted capped-5" convention).
+            let sorted = matches.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    || ($0.name.caseInsensitiveCompare($1.name) == .orderedSame && $0.id < $1.id)
+            }
+            let candidates = sorted.prefix(5).map { "\($0.name) (\($0.id))" }.joined(separator: ", ")
             throw MacError(.badInput, "Multiple playlists named '\(nameOrID)': \(candidates). Use the id from: mac music playlists")
         }
         return matches[0]
     }
 
     func requireUserPlaylist(_ info: PlaylistInfo) throws {
-        guard info.kind == "user" else {
+        // Store contract emits cooked "user"/"system" values, but this guards against drift.
+        guard info.kind.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("user") == .orderedSame else {
             throw MacError(.badInput, "'\(info.name)' is a system playlist — only user playlists can be modified.")
         }
     }
