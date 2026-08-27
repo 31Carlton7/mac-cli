@@ -33,6 +33,10 @@ public struct ShortcutsCommand: AsyncParsableCommand {
                 name (two shortcuts sharing it) lists candidates -- resolve with \
                 --id and the exact id from 'mac shortcuts list'.
 
+                The output is the shortcut's return value, not a confirmation --
+                like any other read in this CLI, it always prints (--quiet has no
+                effect on it) and prints nothing when the shortcut returns nothing.
+
                 Examples:
                   mac shortcuts run "Get Weather"
                   mac shortcuts run 1234ABCD-... --id
@@ -54,7 +58,10 @@ public struct ShortcutsCommand: AsyncParsableCommand {
                     // contain quotes/control characters that would corrupt the envelope.
                     let data = try! JSONSerialization.data(withJSONObject: ["output": result], options: [.sortedKeys])
                     print(String(data: data, encoding: .utf8)!)
-                } else if !result.isEmpty || !output.quiet {
+                } else if !result.isEmpty {
+                    // This is a payload (the shortcut's return value), not a
+                    // confirmation echo -- reads in this CLI always print, so
+                    // --quiet does not gate it. Empty output prints nothing.
                     print(result)
                 }
             }

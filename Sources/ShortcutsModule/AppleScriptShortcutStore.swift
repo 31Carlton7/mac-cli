@@ -18,15 +18,25 @@ public final class AppleScriptShortcutStore: ShortcutStore {
 
     /// Maps the run script's raw return value: "SHORTCUTERR:<message>" -> a
     /// thrown badInput carrying the message (the shortcut itself failed, or
-    /// the id doesn't exist); "ok" (the script's fallback when the result
-    /// couldn't be coerced to text) -> "" (no output); anything else is the
-    /// shortcut's textual output, passed through as-is.
+    /// the id doesn't exist); "SHORTCUTNORESULT" (the script's fallback when
+    /// the result couldn't be coerced to text) -> "" (no output);
+    /// "SHORTCUTOUT:<payload>" -> the payload, stripped of its prefix -- this
+    /// is what keeps a shortcut that genuinely returns the string "ok" from
+    /// colliding with the no-output case. Anything else (defensive, should
+    /// never happen given the script's shape) is passed through unchanged
+    /// rather than dropped.
     static func mapRunOutput(_ output: String) throws -> String {
         if output.hasPrefix("SHORTCUTERR:") {
             let message = String(output.dropFirst("SHORTCUTERR:".count))
             throw MacError(.badInput, "Shortcut failed: \(message)")
         }
-        return output == "ok" ? "" : output
+        if output == "SHORTCUTNORESULT" {
+            return ""
+        }
+        if output.hasPrefix("SHORTCUTOUT:") {
+            return String(output.dropFirst("SHORTCUTOUT:".count))
+        }
+        return output
     }
 
     /// Rows: id FS name FS folderText. Dedupe by id; malformed rows (< 3

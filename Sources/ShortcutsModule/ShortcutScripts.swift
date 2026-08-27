@@ -54,10 +54,15 @@ enum ShortcutScripts {
     /// specifier (not `whose`). `input` is appended as `with input "<escaped>"`
     /// when non-nil. Any failure (unknown id, the shortcut itself erroring)
     /// is caught by the outer try and returned as the "SHORTCUTERR:<message>"
-    /// sentinel; the store maps that prefix to a badInput MacError. On
-    /// success, the result is coerced to text in its own try -- shortcuts
-    /// that produce no usable text result (or no result at all) fall back to
-    /// the "ok" sentinel, which the store maps to "" (no output).
+    /// sentinel; the store maps that prefix to a badInput MacError.
+    ///
+    /// The success and no-result sentinels are prefix/whole-string distinct on
+    /// purpose: shortcut output is arbitrary user text (unlike Music/TV's
+    /// closed-form "ok"), so a shortcut that genuinely returns the string "ok"
+    /// must not collide with "no output". Every real result is prefixed with
+    /// "SHORTCUTOUT:" (even one whose payload happens to be "ok"); a result
+    /// that can't be coerced to text at all falls back to the separate,
+    /// unprefixed "SHORTCUTNORESULT" sentinel.
     static func run(id: String, input: String?) -> String {
         let escapedID = AppleScript.escape(id)
         let inputClause = input.map { " with input \"\(AppleScript.escape($0))\"" } ?? ""
@@ -67,9 +72,9 @@ enum ShortcutScripts {
                 try
                     set r to run shortcut id "\(escapedID)"\(inputClause)
                     try
-                        return r as text
+                        return "SHORTCUTOUT:" & (r as text)
                     on error
-                        return "ok"
+                        return "SHORTCUTNORESULT"
                     end try
                 on error m
                     return "SHORTCUTERR:" & m

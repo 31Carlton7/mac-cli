@@ -30,8 +30,11 @@ public struct ShortcutActions {
         if matches.count > 1 {
             // Sort name-then-id before capping so the candidate list is deterministic
             // regardless of store order (repo-wide "sorted capped-5" convention).
+            // Ordering and tie-break equality both use caseInsensitiveCompare (the
+            // same comparator the exact-match filter above uses) so the two checks
+            // can't disagree on what counts as "the same name".
             let sorted = matches.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                $0.name.caseInsensitiveCompare($1.name) == .orderedAscending
                     || ($0.name.caseInsensitiveCompare($1.name) == .orderedSame && $0.id < $1.id)
             }
             let candidates = sorted.prefix(5).map { "\($0.name) (\($0.id))" }.joined(separator: ", ")

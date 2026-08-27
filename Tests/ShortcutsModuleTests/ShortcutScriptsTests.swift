@@ -41,13 +41,20 @@ final class ShortcutScriptsTests: XCTestCase {
         XCTAssertTrue(script.contains("name of folder of s"))
     }
 
+    /// The success and error sentinels must be structurally distinguishable from
+    /// arbitrary shortcut output -- a shortcut that legitimately returns "ok" (a
+    /// very common status string) must not collide with the "no result" case.
+    /// "SHORTCUTOUT:" prefixes every real result (even one that happens to say
+    /// "ok"); "SHORTCUTNORESULT" is a separate, unprefixed sentinel for the
+    /// genuine no-output case.
     func testRunScriptShapeErrorMappingAndOutputFallback() {
         let script = ShortcutScripts.run(id: "s1", input: nil)
         XCTAssertTrue(script.contains(#"run shortcut id "s1""#))
         XCTAssertTrue(script.contains("on error m"))
         XCTAssertTrue(script.contains(#"return "SHORTCUTERR:" & m"#))
         XCTAssertTrue(script.contains("r as text"))
-        XCTAssertTrue(script.contains(#"return "ok""#))
+        XCTAssertTrue(script.contains(#"return "SHORTCUTOUT:" & (r as text)"#))
+        XCTAssertTrue(script.contains(#"return "SHORTCUTNORESULT""#))
         XCTAssertFalse(script.contains("with input"))
     }
 
