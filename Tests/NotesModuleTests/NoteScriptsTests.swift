@@ -69,4 +69,66 @@ final class NoteScriptsTests: XCTestCase {
         let titleOnly = NoteScripts.edit(id: "n1", title: "T", body: nil)
         XCTAssertTrue(titleOnly.contains(#"set name of n to "T""#))
     }
+
+    // MARK: - Fix 1: HTML-entity escaping for note-body text
+
+    func testAddEscapesHTMLEntitiesInTitleAndBody() {
+        let script = NoteScripts.add(title: "a & b", body: "5 < 10 && x > 3", folderID: nil)
+        XCTAssertTrue(script.contains("a &amp; b"))
+        XCTAssertTrue(script.contains("5 &lt; 10 &amp;&amp; x &gt; 3"))
+        XCTAssertFalse(script.contains("5 < 10"))
+    }
+
+    func testAppendEscapesHTMLEntities() {
+        let script = NoteScripts.append(id: "n1", text: "<b>x</b>")
+        XCTAssertTrue(script.contains("&lt;b&gt;x&lt;/b&gt;"))
+        XCTAssertFalse(script.contains("<b>x</b>"))
+    }
+
+    func testEditEscapesHTMLEntitiesInBodyBranchesButNotTitleOnly() {
+        let both = NoteScripts.edit(id: "n1", title: "a & b", body: "5 < 10")
+        XCTAssertTrue(both.contains("a &amp; b"))
+        XCTAssertTrue(both.contains("5 &lt; 10"))
+
+        let bodyOnly = NoteScripts.edit(id: "n1", title: nil, body: "5 < 10")
+        XCTAssertTrue(bodyOnly.contains("5 &lt; 10"))
+
+        // set name of n to "..." is not HTML — title-only stays a plain string literal.
+        let titleOnly = NoteScripts.edit(id: "n1", title: "a & b", body: nil)
+        XCTAssertTrue(titleOnly.contains(#"set name of n to "a & b""#))
+    }
+
+    // MARK: - Fix 2: nested subfolders
+
+    func testFoldersAndNotesWalkNestedSubfoldersWithAQueue() {
+        let folders = NoteScripts.folders()
+        XCTAssertTrue(folders.contains("repeat while (count of queue) > 0"))
+        XCTAssertFalse(folders.contains("repeat with f in folders of a"))
+
+        let all = NoteScripts.notes(folderID: nil, includeBodies: false)
+        XCTAssertTrue(all.contains("repeat while (count of queue) > 0"))
+        XCTAssertFalse(all.contains("repeat with f in folders of a"))
+    }
+
+    func testAccountResolutionWalksContainerChainForNestedFolders() {
+        let read = NoteScripts.read(id: "n1", html: false)
+        XCTAssertTrue(read.contains("(class of c) is account"))
+        let add = NoteScripts.add(title: "t", body: "b", folderID: nil)
+        XCTAssertTrue(add.contains("(class of c) is account"))
+    }
+
+    // MARK: - Fix 3: locked (password-protected) notes
+
+    func testBulkBodyFetchFallsBackPerNoteOnLockedNotes() {
+        let scoped = NoteScripts.notes(folderID: "f1", includeBodies: true)
+        XCTAssertTrue(scoped.contains("repeat with j from 1 to count of ids"))
+        XCTAssertTrue(scoped.contains("plaintext of note j of f"))
+    }
+
+    func testReadToleratesLockedNoteBody() {
+        let plain = NoteScripts.read(id: "n1", html: false)
+        XCTAssertTrue(plain.contains("set bodyVal to \"\""))
+        XCTAssertTrue(plain.contains("set bodyVal to (plaintext of n) as text"))
+        XCTAssertTrue(plain.contains("end try"))
+    }
 }
