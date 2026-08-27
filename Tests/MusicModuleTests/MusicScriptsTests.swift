@@ -31,18 +31,34 @@ final class MusicScriptsTests: XCTestCase {
     }
 
     /// The only `whose` allowed anywhere is the sanctioned by-persistent-ID
-    /// shape, wrapped in `with timeout of 30 seconds`. Split every script on
-    /// "whose" and assert every occurrence (after the first split segment,
-    /// which precedes the first "whose") is immediately followed by
-    /// " persistent ID is".
+    /// shape, wrapped in `with timeout of 30 seconds`. Two checks per script:
+    /// (1) every substring immediately following "whose" matches the FULL
+    /// sanctioned shape through its closing quote+paren — not just the
+    /// " persistent ID is" prefix, which would also accept a shape that
+    /// diverges later (e.g. a stray extra clause tacked on before the
+    /// paren); (2) the count of "whose" occurrences equals the count of
+    /// "with timeout of 30 seconds" occurrences, since every sanctioned
+    /// `whose` lives inside exactly one such 30s timeout block and vice versa.
     func testOnlyWhoseOccurrenceIsSanctionedByPersistentID() {
+        // ` persistent ID is "<escaped id, i.e. any run of non-quote/backslash
+        // chars or backslash-escaped pairs>"` up to and including the closing
+        // paren of the `(first ... whose ...)` expression.
+        let sanctionedSuffix = try! NSRegularExpression(
+            pattern: #"^ persistent ID is "([^"\\]|\\.)*"\)"#
+        )
         for (name, script) in allVariants() {
+            let whoseCount = script.components(separatedBy: "whose").count - 1
+            let timeoutCount = script.components(separatedBy: "with timeout of 30 seconds").count - 1
+            XCTAssertEqual(whoseCount, timeoutCount,
+                           "\(name): \(whoseCount) 'whose' occurrence(s) but \(timeoutCount) 30s timeout block(s)")
+
             let parts = script.components(separatedBy: "whose")
             guard parts.count > 1 else { continue }
             for suffix in parts.dropFirst() {
-                XCTAssertTrue(
-                    suffix.hasPrefix(" persistent ID is"),
-                    "\(name): unsanctioned whose usage: ...whose\(suffix.prefix(40))"
+                let range = NSRange(suffix.startIndex..., in: suffix)
+                XCTAssertNotNil(
+                    sanctionedSuffix.firstMatch(in: suffix, range: range),
+                    "\(name): unsanctioned whose usage: ...whose\(suffix.prefix(60))"
                 )
             }
         }
@@ -61,6 +77,9 @@ final class MusicScriptsTests: XCTestCase {
             XCTAssertTrue(script.contains("whose persistent ID is"))
             XCTAssertTrue(script.contains("with timeout of 30 seconds"))
             XCTAssertTrue(script.contains("NOTFOUND"))
+            XCTAssertTrue(script.contains("TIMEOUT"))
+            XCTAssertTrue(script.contains("errNum"))
+            XCTAssertTrue(script.contains("-1712"))
         }
     }
 

@@ -25,6 +25,11 @@ enum MusicScripts {
     /// 30s timeout and a `try` that returns the NOTFOUND sentinel. `container`
     /// is the AppleScript expression to search within (e.g. `library playlist 1`
     /// for tracks, or omitted for `first playlist`). Sets `varName` in scope.
+    /// -1712 is AppleEvent's "event timed out" error number — distinct from
+    /// every other failure (element genuinely absent, app not running, etc.),
+    /// which all collapse to NOTFOUND. The store maps TIMEOUT to a thrown
+    /// error instead of a false/nil result, since it means "unknown", not
+    /// "confirmed absent".
     private static func locateByPersistentID(
         kind: String, container: String?, id: String, varName: String
     ) -> String {
@@ -34,8 +39,12 @@ enum MusicScripts {
                     with timeout of 30 seconds
                         set \(varName) to (first \(kind) of \(containerExpr)whose persistent ID is "\(AppleScript.escape(id))")
                     end timeout
-                on error
-                    return "NOTFOUND"
+                on error number errNum
+                    if errNum is -1712 then
+                        return "TIMEOUT"
+                    else
+                        return "NOTFOUND"
+                    end if
                 end try
         """
     }
@@ -48,16 +57,28 @@ enum MusicScripts {
         locateByPersistentID(kind: "track", container: playlistVar, id: id, varName: varName)
     }
 
+    /// No container: `first playlist whose persistent ID is "..."` — the plan's
+    /// exact "playlist equivalent" of the track shape.
+    ///
+    /// Kind-guarding (a resolved playlist must be "user", not "system", before
+    /// it's mutated) is the actions layer's job — see
+    /// `MusicActions.requireUserPlaylist`. This helper resolves by identity
+    /// only; it does not and must not check kind. Any direct caller of a
+    /// script built on this helper (i.e. anything other than going through
+    /// MusicActions) is responsible for applying that guard itself before
+    /// mutating the result.
     private static func locatePlaylist(id: String, varName: String = "thePlaylist") -> String {
-        // No container: `first playlist whose persistent ID is "..."` — the plan's
-        // exact "playlist equivalent" of the track shape.
         """
         try
                     with timeout of 30 seconds
                         set \(varName) to (first playlist whose persistent ID is "\(AppleScript.escape(id))")
                     end timeout
-                on error
-                    return "NOTFOUND"
+                on error number errNum
+                    if errNum is -1712 then
+                        return "TIMEOUT"
+                    else
+                        return "NOTFOUND"
+                    end if
                 end try
         """
     }
