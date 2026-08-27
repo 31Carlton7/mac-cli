@@ -51,7 +51,15 @@ public final class AppleScriptNoteStore: NoteStore {
     }
 
     public func edit(id: String, title: String?, body: String?) async throws -> Bool {
-        try await AppleScript.run(NoteScripts.edit(id: id, title: title, body: body), targetName: "Notes") != "NOTFOUND"
+        var effectiveTitle = title
+        if title == nil, body != nil {
+            // Body-only edits re-embed the existing title into HTML; fetch it here
+            // so it goes through htmlEscape like every other user-visible string
+            // (one extra round trip, but the title can contain <, >, &).
+            guard let current = try await read(id: id, html: false) else { return false }
+            effectiveTitle = current.title
+        }
+        return try await AppleScript.run(NoteScripts.edit(id: id, title: effectiveTitle, body: body), targetName: "Notes") != "NOTFOUND"
     }
 
     public func delete(id: String) async throws -> Bool {

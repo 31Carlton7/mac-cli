@@ -69,7 +69,8 @@ final class NoteScriptsTests: XCTestCase {
         XCTAssertTrue(both.contains("<h1>T</h1>"))
         XCTAssertTrue(both.contains("set body of n"))
         let bodyOnly = NoteScripts.edit(id: "n1", title: nil, body: "B")
-        XCTAssertTrue(bodyOnly.contains("name of n"))       // preserves existing title
+        XCTAssertFalse(bodyOnly.contains("name of n"))      // no longer splices the existing title
+        XCTAssertTrue(bodyOnly.contains(#"set body of n to "<div>B</div>""#))
         let titleOnly = NoteScripts.edit(id: "n1", title: "T", body: nil)
         XCTAssertTrue(titleOnly.contains(#"set name of n to "T""#))
     }

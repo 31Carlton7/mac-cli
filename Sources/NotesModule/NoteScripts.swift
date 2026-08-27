@@ -241,7 +241,9 @@ enum NoteScripts {
         case let (newTitle?, newBody?):
             mutation = "set body of n to \"<div><h1>\(AppleScript.escape(Self.htmlEscape(newTitle)))</h1></div><div>\(AppleScript.escape(Self.htmlEscape(newBody)))</div>\""
         case let (nil, newBody?):
-            mutation = "set body of n to \"<div><h1>\" & (name of n) & \"</h1></div><div>\(AppleScript.escape(Self.htmlEscape(newBody)))</div>\""
+            // The store always supplies a title for body edits (see AppleScriptNoteStore.edit);
+            // this direct-call fallback replaces the body without re-embedding a title.
+            mutation = "set body of n to \"<div>\(AppleScript.escape(Self.htmlEscape(newBody)))</div>\""
         case let (newTitle?, nil):
             // set name of n to "..." is not HTML — only AppleScript-escape, don't htmlEscape.
             mutation = "set name of n to \"\(AppleScript.escape(newTitle))\""
