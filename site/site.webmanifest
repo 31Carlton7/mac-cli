@@ -1,7 +1,7 @@
 {
   "name": "mac — your Mac's apps, on the command line",
   "short_name": "mac",
-  "description": "An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages and Notes.",
+  "description": "An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers, Shortcuts and calls.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

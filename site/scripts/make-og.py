@@ -36,6 +36,9 @@ APPS = [
     ("Music", "/System/Applications/Music.app"),
     ("TV", "/System/Applications/TV.app"),
     ("Finder", "/System/Library/CoreServices/Finder.app"),
+    ("Keynote", "/Applications/Keynote.app"),
+    ("Pages", "/Applications/Pages.app"),
+    ("Numbers", "/Applications/Numbers.app"),
     ("Shortcuts", "/System/Applications/Shortcuts.app"),
     ("FaceTime", "/System/Applications/FaceTime.app"),
 ]
@@ -109,7 +112,7 @@ def main():
             x += d.textlength(ch, font=font) + track
 
     with tempfile.TemporaryDirectory() as tmp:
-        size, gap = 140, 36
+        size, gap = 124, 28
         x = (W - (len(APPS) * size + (len(APPS) - 1) * gap)) // 2
         for name, path in APPS:
             png = icon_png(path, os.path.join(tmp, f"{name}.png"))

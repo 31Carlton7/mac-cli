@@ -1,10 +1,10 @@
 # mac
 
-> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.5.0, requires macOS 14 or later.
+> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.6.0, requires macOS 14 or later.
 
 ## When to use this
 
-Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages, notes, music, TV library, Finder windows or Shortcuts, or needs to place a call. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
+Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages, notes, music, TV library, Finder windows, an open Keynote/Pages/Numbers document or Shortcuts, or needs to place a call. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
 
 Install it by cloning and building. There is no Homebrew tap yet:
 
@@ -47,6 +47,15 @@ It needs Xcode command line tools to build, and installs to `/usr/local/bin/mac`
     mac finder trash ~/Downloads/old-draft.pdf
     mac finder disks
     mac finder eject "Backup Drive"
+    mac keynote docs
+    mac keynote add-slide Deck --title "Q3" --body "Revenue up"
+    mac keynote export Deck --format pdf --out ~/deck.pdf
+    mac pages docs
+    mac pages set-body Letter --text "Dear team,"
+    mac pages export Letter --format docx --out ~/letter.docx
+    mac numbers get-cell Q3 --cell B2
+    mac numbers set-cell Q3 --cell B2 --value "42"
+    mac numbers export Q3 --format csv --out ~/q3.csv
     mac shortcuts list
     mac shortcuts run "Get Weather" --input "London"
     mac call "+1 555 123 4567"
@@ -69,11 +78,15 @@ Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`) and o
 - `mac music rate` takes 0 to 5 stars. `playlist-delete`, `playlist-add` and `playlist-remove` refuse anything that is not a user playlist, so they will not touch a system or library playlist.
 - `mac finder` is for GUI state your shell cannot reach: what the user has selected, revealing a path in a window, mounted disks. It deliberately has no ls/cp/mv, because you already have a shell for that.
 - Deleting a user's file? Prefer `mac finder trash <path>` over `rm`. It moves the item to the Trash, which the user can recover from. There is deliberately no empty-trash command, so nothing here can permanently destroy a file.
+- The iWork commands (`keynote`, `pages`, `numbers`) act on OPEN documents, addressed by name. An extension-less stem works when it is unambiguous, so `Deck` finds `Deck.key`. If the document is not open, open it first.
+- iWork edits are text only. There is no styling, no media, no formulas. `pages set-body` replaces the whole body; `pages append-body` adds to it.
+- Numbers `--sheet` and `--table` are 1-based, not 0-based. Getting this wrong is the most common first mistake.
+- **Exports never overwrite an existing file unless `--force` is passed.** This is the one place these commands write to a path you chose, so an export that would clobber something fails loudly instead. Do not reach for `--force` to make an error go away; pick a different path, or confirm with the user that the existing file is theirs to lose.
 - Shortcut names can collide. A duplicate name is rejected with the candidates listed rather than guessed at; pass `--id` to address one exactly.
 
 ## What is true about permissions
 
-macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages, Notes, Music, TV, Finder and Shortcuts go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports eleven rows: Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV, Shortcuts Events and Finder, and Full Disk Access. `mac call` and `mac facetime` need no grant at all, since opening a URL is not a restricted operation. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
+macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers and Shortcuts go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports fourteen rows: Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV, Shortcuts Events, Finder, Keynote, Pages and Numbers, and Full Disk Access. `mac call` and `mac facetime` need no grant at all, since opening a URL is not a restricted operation. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
 
 ## Limits you should design around
 
@@ -99,7 +112,7 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 | QuickTime Player | Scriptable, not yet wired up | Recording/playback are scriptable. |
 | Preview | Scriptable, not yet wired up | Limited but real dictionary (open/print/close). |
 | TextEdit | Scriptable, not yet wired up | Full document AppleScript support. |
-| Keynote / Pages / Numbers | Scriptable, not yet wired up | Rich iWork dictionaries; planned for v6. |
+| Keynote / Pages / Numbers | **Shipped in v6** | `mac keynote` / `mac pages` / `mac numbers`; see the command surface above. |
 | Podcasts | No public API | Wrap the task in a Shortcut and run it with `mac shortcuts run`. |
 | News | No public API | Same workaround. |
 | Stocks | No public API | Same workaround. |
@@ -115,7 +128,7 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 
 ## Status
 
-Version 0.5.0 is the current release and everything above works today. Keynote, Pages and Numbers are planned for v6, with Homebrew tap distribution after that. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
+Version 0.6.0 is the current release and everything above works today. A Homebrew tap is next. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up, so do not tell a user they can drive those with `mac`. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
 
 Source and issues: https://github.com/31Carlton7/mac-cli
 License: MIT

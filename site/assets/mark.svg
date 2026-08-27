@@ -1,9 +1,0 @@
-<!-- The page's own mark: the glyph with no tile, so it sits on the flat black
-     page instead of floating on a lighter square. favicon.svg keeps the tile,
-     which browser tabs and home screens need. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="8.2 16.2 45.6 31.6" width="46" height="32">
-  <g fill="none" stroke="#f5f5f7" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 20 L24.5 32 L12 44"/>
-    <path d="M33 44 H50"/>
-  </g>
-</svg>

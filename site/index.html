@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mac: your Mac's apps, on the command line</title>
-<meta name="description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Shortcuts and calls. Native frameworks, millisecond calls, --json on every command, exit codes an agent can branch on. Free and MIT licensed.">
+<meta name="description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers, Shortcuts and calls. Native frameworks, millisecond calls, --json on every command, exit codes an agent can branch on. Free and MIT licensed.">
 <link rel="canonical" href="https://macoscli.sh/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="mac">
 <meta property="og:title" content="mac: your Mac's apps, on the command line">
-<meta property="og:description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Shortcuts and calls. Free and open source.">
+<meta property="og:description" content="An agent-friendly CLI for Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers, Shortcuts and calls. Free and open source.">
 <meta property="og:url" content="https://macoscli.sh/">
 <meta property="og:image" content="https://macoscli.sh/assets/og.png">
 <meta property="og:image:width" content="2400">
@@ -55,7 +55,7 @@
   .rail { padding-left: 5.5%; padding-right: 5.5%; }
 
   header { padding-top: 28px; display: flex; align-items: center; gap: 10px; }
-  header .mark { width: 30px; height: auto; display: block; }
+  header .mark { width: 26px; height: 26px; display: block; }
   header .name { font-size: 16px; color: var(--body); }
   header nav { margin-left: auto; }
   header nav a { font-size: 15px; color: var(--dim); text-decoration: none; transition: color 0.15s ease; }
@@ -260,13 +260,13 @@
 <body>
 
 <header class="rail">
-  <img class="mark" src="/assets/mark.svg" alt="" width="30" height="21">
+  <img class="mark" src="/assets/favicon.svg" alt="" width="26" height="26">
   <span class="name">mac</span>
   <nav><a href="https://github.com/31Carlton7/mac-cli">GitHub</a></nav>
 </header>
 
 <section class="hero rail">
-  <h1><img class="inline-icon" src="/assets/calendar.png" alt="">Calendar, <img class="inline-icon" src="/assets/reminders.png" alt="">Reminders, <img class="inline-icon" src="/assets/contacts.png" alt="">Contacts, <img class="inline-icon" src="/assets/mail.png" alt="">Mail, <img class="inline-icon" src="/assets/messages.png" alt="">Messages, <img class="inline-icon" src="/assets/notes.png" alt="">Notes, <img class="inline-icon" src="/assets/music.png" alt="">Music, <img class="inline-icon" src="/assets/tv.png" alt="">TV, <img class="inline-icon" src="/assets/finder.png" alt="">Finder, <img class="inline-icon" src="/assets/shortcuts.png" alt="">Shortcuts and <img class="inline-icon" src="/assets/facetime.png" alt="">FaceTime, on the command line. <span class="rest">One binary, built for AI agents and the humans who drive them. Every command has <code>--json</code>, stable exit codes, and IDs you can trust.</span></h1>
+  <h1><img class="inline-icon" src="/assets/calendar.png" alt="">Calendar, <img class="inline-icon" src="/assets/reminders.png" alt="">Reminders, <img class="inline-icon" src="/assets/contacts.png" alt="">Contacts, <img class="inline-icon" src="/assets/mail.png" alt="">Mail, <img class="inline-icon" src="/assets/messages.png" alt="">Messages, <img class="inline-icon" src="/assets/notes.png" alt="">Notes, <img class="inline-icon" src="/assets/music.png" alt="">Music, <img class="inline-icon" src="/assets/tv.png" alt="">TV, <img class="inline-icon" src="/assets/finder.png" alt="">Finder, <img class="inline-icon" src="/assets/keynote.png" alt="">Keynote, <img class="inline-icon" src="/assets/pages.png" alt="">Pages, <img class="inline-icon" src="/assets/numbers.png" alt="">Numbers, <img class="inline-icon" src="/assets/shortcuts.png" alt="">Shortcuts and <img class="inline-icon" src="/assets/facetime.png" alt="">FaceTime, on the command line. <span class="rest">One binary, built for AI agents and the humans who drive them. Every command has <code>--json</code>, stable exit codes, and IDs you can trust.</span></h1>
   <div class="buttons">
     <span class="cmd">
       <code id="install"><span class="p">❯</span>git clone https://github.com/31Carlton7/mac-cli.git &amp;&amp; cd mac-cli &amp;&amp; make install</code>
@@ -290,7 +290,7 @@
 </div>
 
 <section class="statement rail">
-  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
+  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder, the iWork apps and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
 </section>
 
 <section class="rail">
@@ -348,6 +348,13 @@
       <p>The GUI state your shell cannot reach. No <code>ls</code> or <code>cp</code>; you already have those.</p>
       <pre><span class="t-p">❯ </span><span class="t-cmd">mac finder selection</span>
 <span class="t-p">❯ </span><span class="t-cmd">mac finder trash</span> <span class="t-arg">~/Downloads/old-draft.pdf</span></pre>
+    </div>
+    <div class="app">
+      <div class="app-head"><img src="/assets/keynote.png" alt=""><img src="/assets/pages.png" alt=""><img src="/assets/numbers.png" alt=""><h3>iWork</h3></div>
+      <p>Agents that ship documents, not descriptions of documents. A deck, a letter, a sheet: exported to PDF, PowerPoint, Word, Excel.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac pages append</span> <span class="t-arg">Letter --text "Sincerely,"</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac numbers set-cell</span> <span class="t-arg">Q3 --cell B2 --value 42</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac keynote export</span> <span class="t-arg">Deck --format pdf --out ~/d.pdf</span></pre>
     </div>
     <div class="app">
       <div class="app-head"><img src="/assets/shortcuts.png" alt=""><h3>Shortcuts</h3></div>
@@ -430,7 +437,10 @@
 ✓ Music              Automation consent granted
 ✓ TV                 Automation consent granted
 ✓ Shortcuts Events   Automation consent granted
-✓ Finder             Automation consent granted</span>
+✓ Finder             Automation consent granted
+✓ Keynote            Automation consent granted
+✓ Pages              Automation consent granted
+✓ Numbers            Automation consent granted</span>
 <span class="t-hi">✗ Full Disk Access   missing for Terminal</span>
 <span class="t-dim">                     → System Settings › Privacy &amp; Security › Full Disk Access</span></pre></div>
   </div>
@@ -438,12 +448,7 @@
 
 <section class="rail">
   <h2 class="label">Next</h2>
-  <div class="soon">
-    <span><img src="/assets/keynote.png" alt="">Keynote</span>
-    <span><img src="/assets/pages.png" alt="">Pages</span>
-    <span><img src="/assets/numbers.png" alt="">Numbers</span>
-  </div>
-  <p class="soon-note">The iWork apps land in v6, along with a Homebrew tap. Photos, QuickTime Player, Preview and TextEdit are all scriptable and on the list after that.</p>
+  <p class="soon-note" style="margin-top: 22px;">A Homebrew tap, so installing is one command instead of a clone and a build. Photos, QuickTime Player, Preview and TextEdit are all scriptable and are the likely candidates after that.</p>
 </section>
 
 <section class="rail">
