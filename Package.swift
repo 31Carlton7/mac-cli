@@ -24,6 +24,7 @@ let package = Package(
         .target(name: "TVModule", dependencies: ["Core"]),
         .target(name: "ShortcutsModule", dependencies: ["Core"]),
         .target(name: "CallModule", dependencies: ["Core"]),
+        .target(name: "FinderModule", dependencies: ["Core"]),
         .executableTarget(
             name: "MacCLI",
             dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule", "MusicModule", "TVModule", "ShortcutsModule", "CallModule"],
@@ -48,5 +49,6 @@ let package = Package(
         .testTarget(name: "TVModuleTests", dependencies: ["TVModule"]),
         .testTarget(name: "ShortcutsModuleTests", dependencies: ["ShortcutsModule"]),
         .testTarget(name: "CallModuleTests", dependencies: ["CallModule"]),
+        .testTarget(name: "FinderModuleTests", dependencies: ["FinderModule"]),
     ]
 )
