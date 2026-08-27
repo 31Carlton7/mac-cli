@@ -70,6 +70,35 @@ final class NumbersActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testStemMatchResolvesDocSavedWithExtension() async throws {
+        store.storedDocs = [IWorkDocInfo(name: "sheet.numbers", path: "/tmp/sheet.numbers", modified: false)]
+        _ = try await actions.getCell(doc: "sheet", sheet: 1, table: 1, cell: "A1")
+        XCTAssertEqual(store.getCellCalls.map(\.doc), ["sheet.numbers"])
+    }
+
+    func testExactNameWinsOverStemMatch() async throws {
+        store.storedDocs = [
+            IWorkDocInfo(name: "sheet", path: nil, modified: false),
+            IWorkDocInfo(name: "sheet.numbers", path: "/tmp/sheet.numbers", modified: false),
+        ]
+        _ = try await actions.getCell(doc: "sheet", sheet: 1, table: 1, cell: "A1")
+        XCTAssertEqual(store.getCellCalls.map(\.doc), ["sheet"])
+    }
+
+    func testAmbiguousStemMatchThrowsBadInput() async {
+        store.storedDocs = [
+            IWorkDocInfo(name: "budget.numbers", path: nil, modified: false),
+            IWorkDocInfo(name: "BUDGET.numbers", path: "/tmp/BUDGET.numbers", modified: false),
+        ]
+        do {
+            _ = try await actions.getCell(doc: "budget", sheet: 1, table: 1, cell: "A1")
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            XCTAssertTrue(error.message.contains("BUDGET.numbers, budget.numbers"))
+        } catch { XCTFail("wrong error type") }
+    }
+
     // MARK: - sheet/table/cell validation
 
     func testSheetOrTableBelowOneThrowsBadInput() async {

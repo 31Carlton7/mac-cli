@@ -76,7 +76,14 @@ public struct KeynoteActions {
             throw MacError(.badInput, "Document name cannot be empty.")
         }
         let all = try await store.docs()
-        let matches = all.filter { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+        var matches = all.filter { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+        if matches.isEmpty {
+            // Saved documents are named with their file extension ("live.key"),
+            // so fall back to matching against names with the extension stripped.
+            matches = all.filter {
+                ($0.name as NSString).deletingPathExtension.caseInsensitiveCompare(trimmed) == .orderedSame
+            }
+        }
         if matches.isEmpty {
             throw MacError(.notFound, "No open document named '\(trimmed)'. Run: mac keynote docs")
         }

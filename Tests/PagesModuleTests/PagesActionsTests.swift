@@ -75,6 +75,35 @@ final class PagesActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testStemMatchResolvesDocSavedWithExtension() async throws {
+        store.storedDocs = [IWorkDocInfo(name: "letter.pages", path: "/tmp/letter.pages", modified: false)]
+        _ = try await actions.getBody(doc: "letter")
+        XCTAssertEqual(store.bodyRequests, ["letter.pages"])
+    }
+
+    func testExactNameWinsOverStemMatch() async throws {
+        store.storedDocs = [
+            IWorkDocInfo(name: "letter", path: nil, modified: false),
+            IWorkDocInfo(name: "letter.pages", path: "/tmp/letter.pages", modified: false),
+        ]
+        _ = try await actions.getBody(doc: "letter")
+        XCTAssertEqual(store.bodyRequests, ["letter"])
+    }
+
+    func testAmbiguousStemMatchThrowsBadInput() async {
+        store.storedDocs = [
+            IWorkDocInfo(name: "memo.pages", path: nil, modified: false),
+            IWorkDocInfo(name: "MEMO.pages", path: "/tmp/MEMO.pages", modified: false),
+        ]
+        do {
+            _ = try await actions.getBody(doc: "memo")
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            XCTAssertTrue(error.message.contains("MEMO.pages, memo.pages"))
+        } catch { XCTFail("wrong error type") }
+    }
+
     func testGetBodyResolvesDocCaseInsensitivelyAndReturnsPayload() async throws {
         store.storedBody = "Dear team,\n\nHello."
         let body = try await actions.getBody(doc: "letter")

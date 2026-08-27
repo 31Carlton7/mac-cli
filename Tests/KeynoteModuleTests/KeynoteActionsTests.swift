@@ -93,6 +93,35 @@ final class KeynoteActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testStemMatchResolvesDocSavedWithExtension() async throws {
+        store.storedDocs = [IWorkDocInfo(name: "live.key", path: "/tmp/live.key", modified: false)]
+        _ = try await actions.slides(doc: "live")
+        XCTAssertEqual(store.slidesRequests, ["live.key"])
+    }
+
+    func testExactNameWinsOverStemMatch() async throws {
+        store.storedDocs = [
+            IWorkDocInfo(name: "live", path: nil, modified: false),
+            IWorkDocInfo(name: "live.key", path: "/tmp/live.key", modified: false),
+        ]
+        _ = try await actions.slides(doc: "live")
+        XCTAssertEqual(store.slidesRequests, ["live"])
+    }
+
+    func testAmbiguousStemMatchThrowsBadInput() async {
+        store.storedDocs = [
+            IWorkDocInfo(name: "deck.key", path: nil, modified: false),
+            IWorkDocInfo(name: "DECK.key", path: "/tmp/DECK.key", modified: false),
+        ]
+        do {
+            _ = try await actions.slides(doc: "deck")
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            XCTAssertTrue(error.message.contains("DECK.key, deck.key"))
+        } catch { XCTFail("wrong error type") }
+    }
+
     // MARK: - new (theme resolution + save path)
 
     func testNewDocUnknownThemeThrowsNotFoundListingSortedFirstFive() async {
