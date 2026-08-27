@@ -13,6 +13,6 @@
     <key>NSContactsUsageDescription</key>
     <string>mac-cli reads and writes contacts on your behalf.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>mac-cli controls Mail, Messages, Notes, Music, TV, and Shortcuts on your behalf.</string>
+    <string>mac-cli controls Mail, Messages, Notes, Music, TV, Shortcuts, Finder, Keynote, Pages, and Numbers on your behalf.</string>
 </dict>
 </plist>

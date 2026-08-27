@@ -83,7 +83,7 @@ public struct NumbersActions {
             let candidates = matches.map(\.name)
                 .sorted { $0 < $1 }
                 .prefix(5).joined(separator: ", ")
-            throw MacError(.badInput, "Multiple open documents named '\(trimmed)': \(candidates).")
+            throw MacError(.badInput, "Multiple open documents named '\(trimmed)': \(candidates). Use the full name from: mac numbers docs")
         }
         return matches[0]
     }
