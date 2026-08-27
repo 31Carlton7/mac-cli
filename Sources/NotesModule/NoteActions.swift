@@ -18,10 +18,18 @@ public struct NoteActions {
     }
 
     public func folders(account: String?) async throws -> [NoteFolderInfo] {
-        let scope = try await resolveScope(folder: nil, account: account)
-        return try await store.folders()
+        let all = try await store.folders()
+        var canonical: String?
+        if let account {
+            let names = Set(all.map(\.account))
+            guard let match = names.first(where: { $0.caseInsensitiveCompare(account) == .orderedSame }) else {
+                throw MacError(.notFound, "No Notes account named '\(account)'. Run: mac notes folders")
+            }
+            canonical = match
+        }
+        return all
             .filter { $0.name != Self.recentlyDeleted }
-            .filter { scope.accountName == nil || $0.account == scope.accountName }
+            .filter { canonical == nil || $0.account == canonical }
             .sorted {
                 let nameOrder = $0.name.localizedCaseInsensitiveCompare($1.name)
                 if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
@@ -67,10 +75,10 @@ public struct NoteActions {
         guard !trimmed.isEmpty else {
             throw MacError(.badInput, "Note title cannot be empty.")
         }
-        let scope = try await resolveScope(folder: folder, account: account)
         if folder == nil, account != nil {
             throw MacError(.badInput, "--account requires --folder when adding a note.")
         }
+        let scope = try await resolveScope(folder: folder, account: account)
         return try await store.add(title: trimmed, body: body, folderID: scope.folderID)
     }
 
@@ -125,8 +133,12 @@ public struct NoteActions {
             throw MacError(.notFound, "No folder named '\(folder)'. Run: mac notes folders")
         }
         if candidates.count > 1 {
-            let accounts = candidates.map(\.account).sorted().prefix(5).joined(separator: ", ")
-            throw MacError(.badInput, "Folder '\(folder)' exists in multiple accounts: \(accounts). Add --account to pick one.")
+            let accounts = Set(candidates.map(\.account))
+            if accounts.count > 1 {
+                let list = accounts.sorted().prefix(5).joined(separator: ", ")
+                throw MacError(.badInput, "Folder '\(folder)' exists in multiple accounts: \(list). Add --account to pick one.")
+            }
+            throw MacError(.badInput, "Folder '\(folder)' appears \(candidates.count) times in account '\(accounts.first!)' (subfolders can share names). Rename one in Notes.app, or scope by a different folder.")
         }
         return Scope(folderID: candidates[0].id, accountName: canonicalAccount,
                      includeRecentlyDeleted: wantsDeleted)

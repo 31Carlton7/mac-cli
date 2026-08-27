@@ -11,6 +11,7 @@ final class MockNoteStore: NoteStore {
     var edited: [(id: String, title: String?, body: String?)] = []
     var deletedIDs: [String] = []
     var addedDrafts: [(title: String, body: String, folderID: String?)] = []
+    var folderFetchCount = 0
 
     private func gate() throws {
         if !accessGranted {
@@ -20,9 +21,13 @@ final class MockNoteStore: NoteStore {
 
     func folders() async throws -> [NoteFolderInfo] {
         try gate()
+        folderFetchCount += 1
         return storedFolders
     }
 
+    // Membership is modeled by (folder name, account) because NoteItem carries no folder id,
+    // so this mock cannot model same-account duplicate folder ids; that case is guarded by
+    // resolveScope and verified live.
     func notes(folderID: String?) async throws -> [NoteItem] {
         try gate()
         guard let folderID else { return storedNotes }
@@ -230,6 +235,11 @@ final class NoteActionsTests: XCTestCase {
         XCTAssertEqual(folders.map(\.id), ["f-ideas", "f-icloud-notes", "f-work-notes"])
     }
 
+    func testFoldersFetchesStoreExactlyOnce() async throws {
+        _ = try await actions.folders(account: nil)
+        XCTAssertEqual(store.folderFetchCount, 1)
+    }
+
     func testPermissionDeniedPropagates() async {
         store.accessGranted = false
         do {
@@ -238,5 +248,65 @@ final class NoteActionsTests: XCTestCase {
         } catch let error as MacError {
             XCTAssertEqual(error.code, .permissionDenied)
         } catch { XCTFail("wrong error type") }
+    }
+
+    func testAddAccountWithoutFolderThrowsBadInput() async {
+        do {
+            _ = try await actions.add(title: "t", body: "b", folder: nil, account: "iCloud")
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            XCTAssertTrue(error.message.contains("--folder"))
+        } catch { XCTFail("wrong error type") }
+    }
+
+    func testAddResolvesFolderAndTrimsTitle() async throws {
+        _ = try await actions.add(title: "  My note  ", body: "b", folder: "Ideas", account: nil)
+        XCTAssertEqual(store.addedDrafts.count, 1)
+        XCTAssertEqual(store.addedDrafts[0].folderID, "f-ideas")
+        XCTAssertEqual(store.addedDrafts[0].title, "My note")
+    }
+
+    func testAddWithoutFolderTargetsDefault() async throws {
+        _ = try await actions.add(title: "t", body: "b", folder: nil, account: nil)
+        XCTAssertEqual(store.addedDrafts.count, 1)
+        XCTAssertNil(store.addedDrafts[0].folderID)
+    }
+
+    func testDuplicateFolderNameWithinSameAccountThrowsBadInputWithAppearsMessage() async {
+        store.storedFolders.append(contentsOf: [
+            folder("f-dup-1", "Dup", "iCloud"),
+            folder("f-dup-2", "Dup", "iCloud"),
+        ])
+        do {
+            _ = try await actions.list(folder: "Dup", account: nil, limit: 20)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+            XCTAssertTrue(error.message.contains("appears 2 times"))
+        } catch { XCTFail("wrong error type") }
+    }
+
+    func testAppendRecordsIDAndText() async throws {
+        store.storedNotes = [note("n1")]
+        try await actions.append(id: "n1", text: "more text")
+        XCTAssertEqual(store.appended.count, 1)
+        XCTAssertEqual(store.appended[0].id, "n1")
+        XCTAssertEqual(store.appended[0].text, "more text")
+    }
+
+    func testEditRecordsIDTitleAndBody() async throws {
+        store.storedNotes = [note("n1")]
+        try await actions.edit(id: "n1", title: "New Title", body: "New Body")
+        XCTAssertEqual(store.edited.count, 1)
+        XCTAssertEqual(store.edited[0].id, "n1")
+        XCTAssertEqual(store.edited[0].title, "New Title")
+        XCTAssertEqual(store.edited[0].body, "New Body")
+    }
+
+    func testDeleteRecordsID() async throws {
+        store.storedNotes = [note("n1")]
+        try await actions.delete(id: "n1")
+        XCTAssertEqual(store.deletedIDs, ["n1"])
     }
 }
