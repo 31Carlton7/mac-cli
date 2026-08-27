@@ -1,0 +1,124 @@
+import XCTest
+@testable import MusicModule
+
+final class MusicScriptsTests: XCTestCase {
+    /// Every script variant this module can emit, with representative args
+    /// (including quote-bearing values to exercise escaping).
+    private func allVariants() -> [(name: String, script: String)] {
+        [
+            ("playerState", MusicScripts.playerState()),
+            ("resume", MusicScripts.resume()),
+            ("pause", MusicScripts.pause()),
+            ("next", MusicScripts.next()),
+            ("previous", MusicScripts.previous()),
+            ("setVolume", MusicScripts.setVolume(42)),
+            ("search", MusicScripts.search(query: #"Bob's "Song""#, limit: 25)),
+            ("playlists", MusicScripts.playlists()),
+            ("createPlaylist", MusicScripts.createPlaylist(name: #"My "Chill" Mix"#)),
+            ("deletePlaylist", MusicScripts.deletePlaylist(id: #"pl"1"#)),
+            ("playTrack", MusicScripts.playTrack(id: #"tr"1"#)),
+            ("playPlaylist", MusicScripts.playPlaylist(id: #"pl"1"#)),
+            ("addTrack", MusicScripts.addTrack(id: #"tr"1"#, toPlaylist: #"pl"1"#)),
+            ("removeTrack", MusicScripts.removeTrack(id: #"tr"1"#, fromPlaylist: #"pl"1"#)),
+            ("rate", MusicScripts.rate(trackID: #"tr"1"#, rating0to100: 80)),
+        ]
+    }
+
+    func testEveryScriptHasTimeout() {
+        for (name, script) in allVariants() {
+            XCTAssertTrue(script.contains("with timeout"), "\(name) missing timeout: \(script.prefix(80))")
+        }
+    }
+
+    /// The only `whose` allowed anywhere is the sanctioned by-persistent-ID
+    /// shape, wrapped in `with timeout of 30 seconds`. Split every script on
+    /// "whose" and assert every occurrence (after the first split segment,
+    /// which precedes the first "whose") is immediately followed by
+    /// " persistent ID is".
+    func testOnlyWhoseOccurrenceIsSanctionedByPersistentID() {
+        for (name, script) in allVariants() {
+            let parts = script.components(separatedBy: "whose")
+            guard parts.count > 1 else { continue }
+            for suffix in parts.dropFirst() {
+                XCTAssertTrue(
+                    suffix.hasPrefix(" persistent ID is"),
+                    "\(name): unsanctioned whose usage: ...whose\(suffix.prefix(40))"
+                )
+            }
+        }
+    }
+
+    func testSanctionedWhoseShapesAreWrappedInThirtySecondTimeout() {
+        let scripts = [
+            MusicScripts.playTrack(id: "t1"),
+            MusicScripts.playPlaylist(id: "p1"),
+            MusicScripts.addTrack(id: "t1", toPlaylist: "p1"),
+            MusicScripts.removeTrack(id: "t1", fromPlaylist: "p1"),
+            MusicScripts.deletePlaylist(id: "p1"),
+            MusicScripts.rate(trackID: "t1", rating0to100: 60),
+        ]
+        for script in scripts {
+            XCTAssertTrue(script.contains("whose persistent ID is"))
+            XCTAssertTrue(script.contains("with timeout of 30 seconds"))
+            XCTAssertTrue(script.contains("NOTFOUND"))
+        }
+    }
+
+    func testPlaylistsLoopHasNoWhose() {
+        let script = MusicScripts.playlists()
+        XCTAssertFalse(script.contains("whose"))
+        XCTAssertTrue(script.contains("repeat with p in playlists"))
+        XCTAssertTrue(script.contains("special kind of p"))
+        XCTAssertTrue(script.contains("class of p"))
+    }
+
+    func testSearchScriptShapeAndBound() {
+        let script = MusicScripts.search(query: #"a "b" c"#, limit: 5)
+        XCTAssertTrue(script.contains("search library playlist 1 for"))
+        XCTAssertTrue(script.contains(#"a \"b\" c"#)) // escaped quotes
+        XCTAssertTrue(script.contains("if n > 5 then set n to 5"))
+        XCTAssertFalse(script.contains("whose"))
+    }
+
+    func testEscapingOfQueryNameAndID() {
+        let query = MusicScripts.search(query: #"weird\name"#, limit: 10)
+        XCTAssertTrue(query.contains(#"weird\\name"#))
+
+        let name = MusicScripts.createPlaylist(name: #"Say "Hi""#)
+        XCTAssertTrue(name.contains(#"Say \"Hi\""#))
+
+        let id = MusicScripts.playTrack(id: #"id"with"quotes"#)
+        XCTAssertTrue(id.contains(#"id\"with\"quotes"#))
+    }
+
+    func testPlayerStateSentinelAndFields() {
+        let script = MusicScripts.playerState()
+        XCTAssertTrue(script.contains("NOTRACK"))
+        XCTAssertTrue(script.contains("player state as text"))
+        XCTAssertTrue(script.contains("current track"))
+        XCTAssertTrue(script.contains("player position"))
+    }
+
+    func testRateScriptEmbedsRawRatingValue() {
+        let script = MusicScripts.rate(trackID: "t1", rating0to100: 80)
+        XCTAssertTrue(script.contains("set rating of theTrack to 80"))
+    }
+
+    func testAddAndRemoveTrackLocateInDifferentContainers() {
+        let add = MusicScripts.addTrack(id: "t1", toPlaylist: "p1")
+        XCTAssertTrue(add.contains("first track of library playlist 1 whose persistent ID is"))
+        XCTAssertTrue(add.contains("first playlist whose persistent ID is"))
+        XCTAssertTrue(add.contains("duplicate theTrack to thePlaylist"))
+
+        let remove = MusicScripts.removeTrack(id: "t1", fromPlaylist: "p1")
+        XCTAssertTrue(remove.contains("first track of thePlaylist whose persistent ID is"))
+        XCTAssertTrue(remove.contains("delete theTrack"))
+    }
+
+    func testCreatePlaylistEmitsPlaylistRecord() {
+        let script = MusicScripts.createPlaylist(name: "Road Trip")
+        XCTAssertTrue(script.contains("make new user playlist with properties"))
+        XCTAssertTrue(script.contains("special kind of p"))
+        XCTAssertTrue(script.contains("class of p"))
+    }
+}
