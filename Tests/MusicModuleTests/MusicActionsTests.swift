@@ -246,12 +246,16 @@ final class MusicActionsTests: XCTestCase {
             XCTFail("expected badInput")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .badInput)
+            // `volume` is a positional argument, not a flag — the message must
+            // not tell agents to pass a nonexistent `--volume` flag.
+            XCTAssertEqual(error.message, "volume must be between 0 and 100.")
         } catch { XCTFail("wrong error type") }
         do {
             _ = try await actions.volume(-1)
             XCTFail("expected badInput")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .badInput)
+            XCTAssertEqual(error.message, "volume must be between 0 and 100.")
         } catch { XCTFail("wrong error type") }
     }
 
@@ -423,12 +427,16 @@ final class MusicActionsTests: XCTestCase {
             XCTFail("expected badInput")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .badInput)
+            // `stars` is a positional argument, not a flag — the message must
+            // not tell agents to pass a nonexistent `--stars` flag.
+            XCTAssertEqual(error.message, "stars must be between 0 and 5.")
         } catch { XCTFail("wrong error type") }
         do {
             try await actions.rate(trackID: "t1", stars: -1)
             XCTFail("expected badInput")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .badInput)
+            XCTAssertEqual(error.message, "stars must be between 0 and 5.")
         } catch { XCTFail("wrong error type") }
     }
 

@@ -45,7 +45,7 @@ public struct MusicActions {
             return try await store.playerState().volume
         }
         guard (0...100).contains(level) else {
-            throw MacError(.badInput, "--volume must be between 0 and 100.")
+            throw MacError(.badInput, "volume must be between 0 and 100.")
         }
         try await store.setVolume(level)
         return level
@@ -110,7 +110,7 @@ public struct MusicActions {
 
     public func rate(trackID: String, stars: Int) async throws {
         guard (0...5).contains(stars) else {
-            throw MacError(.badInput, "--stars must be between 0 and 5.")
+            throw MacError(.badInput, "stars must be between 0 and 5.")
         }
         guard try await store.rate(trackID: trackID, rating0to100: stars * 20) else {
             throw MacError(.notFound, "No track with id \(trackID). Run: mac music search")
