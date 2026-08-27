@@ -49,6 +49,10 @@ final class NoteScriptsTests: XCTestCase {
         let scoped = NoteScripts.add(title: "t", body: "b", folderID: "f1")
         XCTAssertTrue(scoped.contains("NOTFOUND"))
         XCTAssertTrue(scoped.contains("make new note at targetFolder"))
+        // Target resolution must descend into nested subfolders via the same
+        // queue-walk pattern as folders()/notes(), not a flat one-level scan.
+        XCTAssertTrue(scoped.contains("repeat while (count of queue) > 0"))
+        XCTAssertFalse(scoped.contains("repeat with f in folders of a"))
     }
 
     func testAppendAndDeleteScripts() {

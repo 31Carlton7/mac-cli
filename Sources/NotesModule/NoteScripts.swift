@@ -175,9 +175,23 @@ enum NoteScripts {
             target = """
             set targetFolder to missing value
                     repeat with a in accounts
-                        repeat with f in folders of a
-                            if ((id of f) as text) is "\(AppleScript.escape(folderID))" then set targetFolder to f
+                        set queue to (folders of a) as list
+                        repeat while (count of queue) > 0
+                            set f to item 1 of queue
+                            if (count of queue) > 1 then
+                                set queue to items 2 thru -1 of queue
+                            else
+                                set queue to {}
+                            end if
+                            try
+                                set queue to queue & ((folders of f) as list)
+                            end try
+                            if ((id of f) as text) is "\(AppleScript.escape(folderID))" then
+                                set targetFolder to f
+                                exit repeat
+                            end if
                         end repeat
+                        if targetFolder is not missing value then exit repeat
                     end repeat
                     if targetFolder is missing value then return "NOTFOUND"
                     set n to make new note at targetFolder with properties {body:noteBody}
