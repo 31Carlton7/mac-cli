@@ -50,6 +50,10 @@ mac tv play <id>
 mac shortcuts run "Get Weather"
 mac call "+1 555 123 4567"
 mac facetime user@example.com --audio
+mac finder selection
+mac finder reveal ~/Downloads/report.pdf
+mac finder trash ~/Downloads/old-draft.pdf
+mac finder disks
 ```
 
 Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`), and offsets (`+7d`, `+2h`).
@@ -67,6 +71,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
 - `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
 - `mac shortcuts run` is the escape hatch for unscriptable apps: wrap the task in a Shortcut and run it by name or id.
+- `mac finder trash` is the recoverable delete: the item goes to the Trash, same as dragging it there in Finder, and can be restored until the Trash is emptied — prefer it over `rm` for user files.
 
 ## Known limitations
 
@@ -88,10 +93,11 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **`mac music search`/`mac music playlists` see your library, not the Apple Music catalog.** Songs you haven't added won't turn up in search, and Apple Music's `whose`-based library search is unusable at scale (the same measured cost that ruled out `whose` for Mail) — `mac music` and `mac tv` resolve a track/playlist by id via the one sanctioned `whose persistent ID is "<id>"` lookup, run under a 30s timeout, since that shape stayed fast in measurement.
 - `mac shortcuts run` blocks until the shortcut finishes; a shortcut that shows its own dialogs or waits on user input will hang the command until that shortcut completes.
 - `mac call`/`mac facetime` only open a `tel:`/`facetime:` URL — they never place the call themselves; macOS still asks you to confirm before dialing.
+- **`mac finder` is trash-only, by design.** It moves files to the Trash (recoverable); it does not copy, move, rename, or permanently delete. It reflects and drives Finder's GUI state (selection, reveal, open, disks, eject) — for bulk or scripted file operations, use your shell.
 
 ## Scriptability of other Apple apps
 
-A survey of remaining first-party apps, for anyone weighing whether to script them directly or via `mac shortcuts run`.
+A survey of remaining first-party apps not yet covered by `mac`, for anyone weighing whether to script them directly or via `mac shortcuts run`. (Finder shipped in v5 — see Usage above.)
 
 | App | Status | Notes |
 | --- | --- | --- |
@@ -100,7 +106,6 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 | Preview | Scriptable, not yet wired up | Limited but real dictionary (open/print/close). |
 | TextEdit | Scriptable, not yet wired up | Full document AppleScript support. |
 | Keynote / Pages / Numbers | Scriptable, not yet wired up | Rich iWork dictionaries; planned for v6. |
-| Finder | Scriptable, not yet wired up | Broad file-management dictionary; planned for v5. |
 | Podcasts | No public API | Wrap the task in a Shortcut and run it with `mac shortcuts run`. |
 | News | No public API | Same workaround. |
 | Stocks | No public API | Same workaround. |
@@ -116,7 +121,7 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 
 ## Roadmap
 
-Finder (v5), iWork — Keynote/Pages/Numbers (v6), Homebrew tap.
+iWork — Keynote/Pages/Numbers (v6), Homebrew tap.
 
 ## License
 
