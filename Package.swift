@@ -30,7 +30,7 @@ let package = Package(
         .target(name: "NumbersModule", dependencies: ["Core"]),
         .executableTarget(
             name: "MacCLI",
-            dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule", "MusicModule", "TVModule", "ShortcutsModule", "CallModule", "FinderModule", "KeynoteModule"],
+            dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule", "MusicModule", "TVModule", "ShortcutsModule", "CallModule", "FinderModule", "KeynoteModule", "PagesModule"],
             exclude: ["Info.plist"],
             linkerSettings: [
                 .unsafeFlags([
