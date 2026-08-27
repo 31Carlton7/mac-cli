@@ -1,6 +1,6 @@
 # mac: your Mac's apps, on the command line
 
-Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV and Shortcuts, driven from one binary, plus phone and FaceTime calls. Built for AI agents and the humans who drive them: every command has `--json`, stable exit codes, and IDs you can trust.
+Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder and Shortcuts, driven from one binary, plus phone and FaceTime calls. Built for AI agents and the humans who drive them: every command has `--json`, stable exit codes, and IDs you can trust.
 
     git clone https://github.com/31Carlton7/mac-cli.git && cd mac-cli && make install
 
@@ -8,7 +8,7 @@ Requires macOS 14 or later and Xcode command line tools.
 
 ## Native frameworks, not screen scraping
 
-Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and `mac` is honest about the difference.
+Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and `mac` is honest about the difference.
 
 ## The apps
 
@@ -52,6 +52,12 @@ Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls
     mac tv list --limit 10
     mac tv play <id>
 
+**Finder.** The GUI state your shell cannot reach. No ls or cp, because you already have a shell.
+
+    mac finder selection
+    mac finder trash ~/Downloads/old-draft.pdf
+    mac finder disks
+
 **Shortcuts.** The escape hatch: anything you can wrap in a Shortcut.
 
     mac shortcuts list
@@ -75,7 +81,7 @@ Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls
 
 ## Permissions, diagnosed
 
-macOS prompts once per capability, and `mac doctor` reports all ten grants (Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV and Shortcuts Events, and Full Disk Access) with fix steps when something is missing. No silent failures, no mystery errors.
+macOS prompts once per capability, and `mac doctor` reports all eleven grants (Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV, Shortcuts Events and Finder, and Full Disk Access) with fix steps when something is missing. No silent failures, no mystery errors.
 
     mac doctor
 
@@ -85,7 +91,7 @@ Podcasts, News, Stocks, Maps, Weather, Books, Voice Memos, Freeform, Journal, Ho
 
 ## Next
 
-Finder lands in v5 and Keynote, Pages and Numbers in v6, along with a Homebrew tap. Photos, QuickTime Player, Preview and TextEdit are all scriptable and are on the list after that.
+Keynote, Pages and Numbers land in v6, along with a Homebrew tap. Photos, QuickTime Player, Preview and TextEdit are all scriptable and are on the list after that.
 
 ## About
 

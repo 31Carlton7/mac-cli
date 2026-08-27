@@ -1,10 +1,10 @@
 # mac
 
-> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.4.0, requires macOS 14 or later.
+> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.5.0, requires macOS 14 or later.
 
 ## When to use this
 
-Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages, notes, music, TV library or Shortcuts, or needs to place a call. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
+Reach for `mac` when you are running on a user's Mac and the task touches their own calendar, reminders, contacts, mail, messages, notes, music, TV library, Finder windows or Shortcuts, or needs to place a call. It is a local CLI, not a hosted API: there is no endpoint on this domain to call, no account, and no key. If the task is on Linux or Windows, or needs to reach someone else's data, this is the wrong tool and you should say so.
 
 Install it by cloning and building. There is no Homebrew tap yet:
 
@@ -41,6 +41,12 @@ It needs Xcode command line tools to build, and installs to `/usr/local/bin/mac`
     mac tv now
     mac tv list --limit 10
     mac tv play <id>
+    mac finder selection
+    mac finder reveal ~/Downloads/report.pdf
+    mac finder open ~/Downloads/report.pdf
+    mac finder trash ~/Downloads/old-draft.pdf
+    mac finder disks
+    mac finder eject "Backup Drive"
     mac shortcuts list
     mac shortcuts run "Get Weather" --input "London"
     mac call "+1 555 123 4567"
@@ -61,11 +67,13 @@ Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`) and o
 - Errors are one-line and actionable on stderr. On exit `2`, run `mac doctor`; it names the missing grant and the fix.
 - `mac call` and `mac facetime` are initiate-only. They open a `tel:`/`facetime:` URL and macOS shows its own confirmation before dialing, so the command returning `0` means the dialog was raised, not that a call happened. There is no answer, hang-up or call-state surface. Use `--dry-run` to print the URL without opening it.
 - `mac music rate` takes 0 to 5 stars. `playlist-delete`, `playlist-add` and `playlist-remove` refuse anything that is not a user playlist, so they will not touch a system or library playlist.
+- `mac finder` is for GUI state your shell cannot reach: what the user has selected, revealing a path in a window, mounted disks. It deliberately has no ls/cp/mv, because you already have a shell for that.
+- Deleting a user's file? Prefer `mac finder trash <path>` over `rm`. It moves the item to the Trash, which the user can recover from. There is deliberately no empty-trash command, so nothing here can permanently destroy a file.
 - Shortcut names can collide. A duplicate name is rejected with the candidates listed rather than guessed at; pass `--id` to address one exactly.
 
 ## What is true about permissions
 
-macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages, Notes, Music, TV and Shortcuts go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports ten rows: Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV and Shortcuts Events, and Full Disk Access. `mac call` and `mac facetime` need no grant at all, since opening a URL is not a restricted operation. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
+macOS prompts once per capability. Calendar, Reminders and Contacts run on the native EventKit and Contacts frameworks. Mail, Messages, Notes, Music, TV, Finder and Shortcuts go through AppleScript and, for reading message history, a read-only copy of the Messages database, because Apple ships no public API for those. They additionally need Automation consent and, for Messages history, Full Disk Access for the terminal app. `mac doctor` reports eleven rows: Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV, Shortcuts Events and Finder, and Full Disk Access. `mac call` and `mac facetime` need no grant at all, since opening a URL is not a restricted operation. `mac doctor` reports all of it with fix steps. Nothing leaves the machine: there is no telemetry, no network call and no server component.
 
 ## Limits you should design around
 
@@ -92,7 +100,6 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 | Preview | Scriptable, not yet wired up | Limited but real dictionary (open/print/close). |
 | TextEdit | Scriptable, not yet wired up | Full document AppleScript support. |
 | Keynote / Pages / Numbers | Scriptable, not yet wired up | Rich iWork dictionaries; planned for v6. |
-| Finder | Scriptable, not yet wired up | Broad file-management dictionary; planned for v5. |
 | Podcasts | No public API | Wrap the task in a Shortcut and run it with `mac shortcuts run`. |
 | News | No public API | Same workaround. |
 | Stocks | No public API | Same workaround. |
@@ -108,7 +115,7 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 
 ## Status
 
-Version 0.4.0 is the current release and everything above works today. Finder is planned for v5, Keynote/Pages/Numbers for v6, and Homebrew tap distribution after that. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
+Version 0.5.0 is the current release and everything above works today. Keynote, Pages and Numbers are planned for v6, with Homebrew tap distribution after that. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
 
 Source and issues: https://github.com/31Carlton7/mac-cli
 License: MIT
