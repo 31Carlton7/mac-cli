@@ -207,7 +207,7 @@ public final class ChatDBReader {
         var clauses: [String] = []
         if messageColumns.contains("item_type") { clauses.append("m.item_type = 0") }
         if messageColumns.contains("associated_message_type") { clauses.append("m.associated_message_type = 0") }
-        if messageColumns.contains("date_retracted") { clauses.append("m.date_retracted IS NULL") }
+        if messageColumns.contains("date_retracted") { clauses.append("(m.date_retracted IS NULL OR m.date_retracted = 0)") }
         return clauses.isEmpty ? "" : " AND " + clauses.joined(separator: " AND ")
     }
 

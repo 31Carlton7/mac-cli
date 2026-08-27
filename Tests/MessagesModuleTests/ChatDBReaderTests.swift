@@ -65,7 +65,7 @@ final class ChatDBReaderTests: XCTestCase {
 
     private func insertMessage(_ db: OpaquePointer, rowID: Int64, guid: String, text: String?, blob: Data?,
                                 date: Int64, isFromMe: Bool, handleID: Int64?,
-                                itemType: Int32 = 0, associatedMessageType: Int32 = 0, dateRetracted: Int64? = nil,
+                                itemType: Int32 = 0, associatedMessageType: Int32 = 0, dateRetracted: Int64? = 0,
                                 fullSchema: Bool = true) {
         let columns = "ROWID, guid, text, attributedBody, date, is_from_me, handle_id"
             + (fullSchema ? ", item_type, associated_message_type, date_retracted" : "")
@@ -415,6 +415,39 @@ final class ChatDBReaderTests: XCTestCase {
         let reader = ChatDBReader(path: path)
         let convos = try reader.conversations(limit: 10)
         XCTAssertEqual(convos.count, 1)
+        XCTAssertEqual(convos[0].lastActivity, Date(timeIntervalSince1970: 1_787_824_860))
+    }
+
+    func testDateRetractedZeroTreatedAsNotRetracted() throws {
+        // On a real chat.db every non-retracted row stores 0, not NULL, in
+        // date_retracted. A NULL value only shows up on rows written before
+        // some prior schema state. Both must be treated as "not retracted";
+        // only an actual retraction timestamp should exclude a row.
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertMessage(db, rowID: 1, guid: "g-zero", text: "normal, real-world default", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil,
+                                dateRetracted: 0)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+            self.insertMessage(db, rowID: 2, guid: "g-null", text: "older row, no value written", blob: nil,
+                                date: self.appleEpochNS(60), isFromMe: false, handleID: nil,
+                                dateRetracted: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 2)
+            // Newest by date, but genuinely retracted — must be excluded, and
+            // must not set lastActivity either.
+            self.insertMessage(db, rowID: 3, guid: "g-retracted", text: "oops", blob: nil,
+                                date: self.appleEpochNS(120), isFromMe: false, handleID: nil,
+                                dateRetracted: 809_517_800_000_000_000)
+            self.joinChatMessage(db, chatID: 1, messageID: 3)
+        }
+        let reader = ChatDBReader(path: path)
+
+        let items = try reader.history(handle: "+15551234567", limit: 10)
+        XCTAssertEqual(Set(items.map { $0.id }), ["g-zero", "g-null"])
+
+        let convos = try reader.conversations(limit: 10)
+        XCTAssertEqual(convos.count, 1)
+        // Newest surviving (non-retracted) row is g-null at +60s.
         XCTAssertEqual(convos[0].lastActivity, Date(timeIntervalSince1970: 1_787_824_860))
     }
 
