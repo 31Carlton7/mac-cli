@@ -20,9 +20,10 @@ let package = Package(
         .target(name: "MailModule", dependencies: ["Core"]),
         .target(name: "MessagesModule", dependencies: ["Core"]),
         .target(name: "NotesModule", dependencies: ["Core"]),
+        .target(name: "MusicModule", dependencies: ["Core"]),
         .executableTarget(
             name: "MacCLI",
-            dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule"],
+            dependencies: ["Core", "CalendarModule", "RemindersModule", "ContactsModule", "MailModule", "MessagesModule", "NotesModule", "MusicModule"],
             exclude: ["Info.plist"],
             linkerSettings: [
                 .unsafeFlags([
@@ -40,5 +41,6 @@ let package = Package(
         .testTarget(name: "MailModuleTests", dependencies: ["MailModule"]),
         .testTarget(name: "MessagesModuleTests", dependencies: ["MessagesModule"]),
         .testTarget(name: "NotesModuleTests", dependencies: ["NotesModule"]),
+        .testTarget(name: "MusicModuleTests", dependencies: ["MusicModule"]),
     ]
 )
