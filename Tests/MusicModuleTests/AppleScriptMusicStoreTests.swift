@@ -172,4 +172,24 @@ final class AppleScriptMusicStoreTests: XCTestCase {
         XCTAssertNoThrow(try AppleScriptMusicStore.checkTimeout("NOTFOUND"))
         XCTAssertNoThrow(try AppleScriptMusicStore.checkTimeout("ok"))
     }
+
+    // MARK: - REFUSED mapping (protected playlists that misreport as
+    // user-modifiable, e.g. Favorite Songs, but reject the mutation verb)
+
+    func testCheckRefusedThrowsBadInputWithMessagePassthrough() {
+        XCTAssertThrowsError(try AppleScriptMusicStore.checkRefused(#"REFUSED:Music got an error: user playlist id 123 doesn't understand the "delete" message."#)) { error in
+            guard let macError = error as? MacError else {
+                return XCTFail("expected MacError, got \(error)")
+            }
+            XCTAssertEqual(macError.code, .badInput)
+            XCTAssertEqual(macError.message,
+                #"Music refused the operation: Music got an error: user playlist id 123 doesn't understand the "delete" message.. Some playlists (e.g. Favorites) are protected even though Music reports them as user playlists."#)
+        }
+    }
+
+    func testCheckRefusedDoesNothingForOtherOutputs() {
+        XCTAssertNoThrow(try AppleScriptMusicStore.checkRefused("NOTFOUND"))
+        XCTAssertNoThrow(try AppleScriptMusicStore.checkRefused("TIMEOUT"))
+        XCTAssertNoThrow(try AppleScriptMusicStore.checkRefused("ok"))
+    }
 }

@@ -246,12 +246,22 @@ enum MusicScripts {
         """
     }
 
+    /// Some playlists (Favorite Songs, measured live) misreport as
+    /// class=user playlist / specialKind=none, so MusicActions' kind guard
+    /// lets a mutation through — and the verb itself then refuses. Wrapping
+    /// the verb (not the locate) in its own try turns that raw AppleScript
+    /// error into the REFUSED sentinel instead of letting it bubble up as an
+    /// internal-envelope error. Same shape on addTrack/removeTrack below.
     static func deletePlaylist(id: String) -> String {
         """
         tell application "Music"
             with timeout of 600 seconds
                 \(locatePlaylist(id: id))
-                delete thePlaylist
+                try
+                    delete thePlaylist
+                on error m
+                    return "REFUSED:" & m
+                end try
             end timeout
         end tell
         return "ok"
@@ -290,7 +300,11 @@ enum MusicScripts {
             with timeout of 600 seconds
                 \(locateTrackInLibrary(id: id))
                 \(locatePlaylist(id: playlistID))
-                duplicate theTrack to thePlaylist
+                try
+                    duplicate theTrack to thePlaylist
+                on error m
+                    return "REFUSED:" & m
+                end try
             end timeout
         end tell
         return "ok"
@@ -303,7 +317,11 @@ enum MusicScripts {
             with timeout of 600 seconds
                 \(locatePlaylist(id: playlistID))
                 \(locateTrackInPlaylist(id: id, playlistVar: "thePlaylist"))
-                delete theTrack
+                try
+                    delete theTrack
+                on error m
+                    return "REFUSED:" & m
+                end try
             end timeout
         end tell
         return "ok"

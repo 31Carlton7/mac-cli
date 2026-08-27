@@ -140,4 +140,31 @@ final class MusicScriptsTests: XCTestCase {
         XCTAssertTrue(script.contains("special kind of p"))
         XCTAssertTrue(script.contains("class of p"))
     }
+
+    // MARK: - Mutation verbs refuse cleanly (protected playlists that
+    // misreport as class=user playlist/specialKind=none, e.g. Favorite
+    // Songs, still reject `delete`/`duplicate` at the verb itself — that
+    // has to surface as a sentinel, not a raw AppleScript error).
+
+    func testDeletePlaylistWrapsVerbAndRefusesCleanly() {
+        let script = MusicScripts.deletePlaylist(id: "p1")
+        XCTAssertTrue(script.contains("try\n"))
+        XCTAssertTrue(script.contains("delete thePlaylist"))
+        XCTAssertTrue(script.contains("on error m"))
+        XCTAssertTrue(script.contains(#"return "REFUSED:" & m"#))
+    }
+
+    func testAddTrackWrapsDuplicateVerbAndRefusesCleanly() {
+        let script = MusicScripts.addTrack(id: "t1", toPlaylist: "p1")
+        XCTAssertTrue(script.contains("duplicate theTrack to thePlaylist"))
+        XCTAssertTrue(script.contains("on error m"))
+        XCTAssertTrue(script.contains(#"return "REFUSED:" & m"#))
+    }
+
+    func testRemoveTrackWrapsDeleteVerbAndRefusesCleanly() {
+        let script = MusicScripts.removeTrack(id: "t1", fromPlaylist: "p1")
+        XCTAssertTrue(script.contains("delete theTrack"))
+        XCTAssertTrue(script.contains("on error m"))
+        XCTAssertTrue(script.contains(#"return "REFUSED:" & m"#))
+    }
 }

@@ -63,18 +63,21 @@ public final class AppleScriptMusicStore: MusicStore {
     public func addTrack(id: String, toPlaylist playlistID: String) async throws -> Bool {
         let out = try await AppleScript.run(MusicScripts.addTrack(id: id, toPlaylist: playlistID), targetName: "Music")
         try Self.checkTimeout(out)
+        try Self.checkRefused(out)
         return out == "ok"
     }
 
     public func removeTrack(id: String, fromPlaylist playlistID: String) async throws -> Bool {
         let out = try await AppleScript.run(MusicScripts.removeTrack(id: id, fromPlaylist: playlistID), targetName: "Music")
         try Self.checkTimeout(out)
+        try Self.checkRefused(out)
         return out == "ok"
     }
 
     public func deletePlaylist(id: String) async throws -> Bool {
         let out = try await AppleScript.run(MusicScripts.deletePlaylist(id: id), targetName: "Music")
         try Self.checkTimeout(out)
+        try Self.checkRefused(out)
         return out == "ok"
     }
 
@@ -97,6 +100,22 @@ public final class AppleScriptMusicStore: MusicStore {
         throw NSError(domain: "Music", code: 2, userInfo: [
             NSLocalizedDescriptionKey: "Music id lookup timed out after 30s — library may be too large for direct id addressing."
         ])
+    }
+
+    /// Some playlists (Favorite Songs, measured live) misreport as
+    /// class=user playlist / specialKind=none, so MusicActions' kind guard
+    /// passes them through — and the mutation verb itself then refuses (e.g.
+    /// "user playlist id ... doesn't understand the 'delete' message").
+    /// MusicScripts wraps the verb (addTrack/removeTrack/deletePlaylist) in
+    /// its own try and returns "REFUSED:<message>" instead of letting that
+    /// raw AppleScript error surface via the internal envelope. This is the
+    /// caller's mistake in the sense that the id resolved to something not
+    /// actually mutable — badInput, not an internal error.
+    static func checkRefused(_ output: String) throws {
+        guard output.hasPrefix("REFUSED:") else { return }
+        let message = String(output.dropFirst("REFUSED:".count))
+        throw MacError(.badInput,
+            "Music refused the operation: \(message). Some playlists (e.g. Favorites) are protected even though Music reports them as user playlists.")
     }
 
     /// Player record fields: state FS volume FS position FS trackID FS name FS
