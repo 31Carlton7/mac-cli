@@ -2,7 +2,7 @@
 
 **[macoscli.sh](https://macoscli.sh)**
 
-An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail, Messages, Notes, Music, TV, and Shortcuts use AppleScript (and a read-only Messages database), since Apple ships no public APIs for them.
+An agent-friendly CLI for native macOS apps. Calendar, Reminders, and Contacts run on native frameworks (EventKit, Contacts) for millisecond calls with typed errors and stable IDs; Mail, Messages, Notes, Music, TV, Shortcuts, Finder, and the iWork apps (Keynote, Pages, Numbers) use AppleScript (and a read-only Messages database), since Apple ships no public APIs for them.
 
 Built for AI agents (Claude Code, etc.) and the humans who drive them: every command has `--json`, stable exit codes, and `--help` with examples.
 
@@ -22,7 +22,7 @@ macOS will prompt once per capability (Calendar, Reminders, Contacts) the first 
 mac doctor
 ```
 
-Mail, Messages, Notes, Music, TV, and Shortcuts additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
+Mail, Messages, Notes, Music, TV, Shortcuts, Finder, Keynote, Pages, and Numbers additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
 
 ## Usage
 
@@ -54,6 +54,12 @@ mac finder selection
 mac finder reveal ~/Downloads/report.pdf
 mac finder trash ~/Downloads/old-draft.pdf
 mac finder disks
+mac keynote new --theme White --out ~/Desktop/pitch.key
+mac keynote add-slide pitch.key --title "Roadmap" --body "Q3 milestones"
+mac pages new --out ~/Desktop/letter.pages
+mac pages set-body letter.pages --text "Dear Sam,"
+mac numbers set-cell budget.numbers --cell B2 --value 42
+mac keynote export pitch.key --format pdf --out ~/Desktop/pitch.pdf --force
 ```
 
 Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals (`tomorrow 2pm`, `friday`), and offsets (`+7d`, `+2h`).
@@ -72,6 +78,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
 - `mac shortcuts run` is the escape hatch for unscriptable apps: wrap the task in a Shortcut and run it by name or id.
 - `mac finder trash` is the recoverable delete: the item goes to the Trash, same as dragging it there in Finder, and can be restored until the Trash is emptied — prefer it over `rm` for user files.
+- iWork exports (`mac keynote/pages/numbers export`) never overwrite an existing file — they fail with a clear error unless you pass `--force`.
 
 ## Known limitations
 
@@ -93,11 +100,15 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **`mac music search`/`mac music playlists` see your library, not the Apple Music catalog.** Songs you haven't added won't turn up in search, and Apple Music's `whose`-based library search is unusable at scale (the same measured cost that ruled out `whose` for Mail) — `mac music` and `mac tv` resolve a track/playlist by id via the one sanctioned `whose persistent ID is "<id>"` lookup, run under a 30s timeout, since that shape stayed fast in measurement.
 - `mac shortcuts run` blocks until the shortcut finishes; a shortcut that shows its own dialogs or waits on user input will hang the command until that shortcut completes.
 - `mac call`/`mac facetime` only open a `tel:`/`facetime:` URL — they never place the call themselves; macOS still asks you to confirm before dialing.
+- **iWork commands operate on OPEN documents.** `mac keynote/pages/numbers` verbs address documents that are currently open in the app, by NAME (as listed by `docs`) — there is no open-by-path; `new` creates (and opens) a document, optionally saving it with `--out`. Two open documents sharing a name are rejected as ambiguous rather than guessed.
+- **iWork edits are text-only and coarse.** Pages editing is the whole body text (`get-body`/`set-body`/`append`) — no styling, images, or per-paragraph addressing; Keynote `add-slide` sets the default title/body items only; Numbers addresses one cell at a time by A1 ref inside **1-based** `--sheet`/`--table` indexes.
+- `mac keynote add-slide` may create the slide and then refuse the title: on a layout without a title item, the slide exists but setting its title text fails — check `mac keynote slides` before retrying.
+- **`mac numbers get-cell` reads values back as text**, and Numbers hands numerics back in its own formatting — a cell set to `42` typically reads back as `42.0`.
 - **`mac finder` is trash-only, by design.** It moves files to the Trash (recoverable); it does not copy, move, rename, or permanently delete. It reflects and drives Finder's GUI state (selection, reveal, open, disks, eject) — for bulk or scripted file operations, use your shell.
 
 ## Scriptability of other Apple apps
 
-A survey of remaining first-party apps not yet covered by `mac`, for anyone weighing whether to script them directly or via `mac shortcuts run`. (Finder shipped in v5 — see Usage above.)
+A survey of remaining first-party apps not yet covered by `mac`, for anyone weighing whether to script them directly or via `mac shortcuts run`. (Finder shipped in v5, Keynote/Pages/Numbers in v6 — see Usage above.)
 
 | App | Status | Notes |
 | --- | --- | --- |
@@ -105,7 +116,7 @@ A survey of remaining first-party apps not yet covered by `mac`, for anyone weig
 | QuickTime Player | Scriptable, not yet wired up | Recording/playback are scriptable. |
 | Preview | Scriptable, not yet wired up | Limited but real dictionary (open/print/close). |
 | TextEdit | Scriptable, not yet wired up | Full document AppleScript support. |
-| Keynote / Pages / Numbers | Scriptable, not yet wired up | Rich iWork dictionaries; planned for v6. |
+| Keynote / Pages / Numbers | **Shipped in v6** | `mac keynote` / `mac pages` / `mac numbers` — see Usage above. |
 | Podcasts | No public API | Wrap the task in a Shortcut and run it with `mac shortcuts run`. |
 | News | No public API | Same workaround. |
 | Stocks | No public API | Same workaround. |
@@ -121,7 +132,7 @@ A survey of remaining first-party apps not yet covered by `mac`, for anyone weig
 
 ## Roadmap
 
-iWork — Keynote/Pages/Numbers (v6), Homebrew tap.
+Homebrew tap.
 
 ## License
 

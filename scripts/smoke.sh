@@ -135,4 +135,48 @@ if [ -f "$SMOKE_FILE" ]; then
 fi
 echo "   (trash verified: file left original location)"
 
+# iWork round-trips run in their own scratch dir; every file they create is
+# trashed (recoverable) at the end. Verbs address OPEN documents by name --
+# `new --out` opens the document under its file name.
+IWORK_DIR="$(mktemp -d /tmp/mac-cli-smoke-iwork-XXXXXX)"
+
+echo "== keynote =="
+"$MAC" keynote docs >/dev/null
+"$MAC" keynote new --out "$IWORK_DIR/smoke.key" --quiet
+"$MAC" keynote add-slide smoke.key --title "Smoke Slide" --body "created by smoke" --quiet
+"$MAC" keynote slides smoke.key | grep -q "Smoke Slide"
+"$MAC" keynote export smoke.key --format pdf --out "$IWORK_DIR/smoke-deck.pdf" --quiet
+if [ ! -s "$IWORK_DIR/smoke-deck.pdf" ]; then
+  echo "smoke: keynote export produced no/empty pdf" >&2
+  exit 1
+fi
+
+echo "== pages =="
+"$MAC" pages docs >/dev/null
+"$MAC" pages new --out "$IWORK_DIR/smoke.pages" --quiet
+"$MAC" pages set-body smoke.pages --text "smoke body line" --quiet
+"$MAC" pages get-body smoke.pages | grep -q "smoke body line"
+"$MAC" pages export smoke.pages --format pdf --out "$IWORK_DIR/smoke-letter.pdf" --quiet
+if [ ! -s "$IWORK_DIR/smoke-letter.pdf" ]; then
+  echo "smoke: pages export produced no/empty pdf" >&2
+  exit 1
+fi
+
+echo "== numbers =="
+"$MAC" numbers docs >/dev/null
+"$MAC" numbers new --out "$IWORK_DIR/smoke.numbers" --quiet
+"$MAC" numbers set-cell smoke.numbers --cell B2 --value 42 --quiet
+# Numbers reads values back as text in its own formatting: a cell set to 42
+# typically reads back "42.0" -- tolerate both.
+"$MAC" numbers get-cell smoke.numbers --cell B2 | grep -Eq '^42(\.0)?$'
+"$MAC" numbers export smoke.numbers --format csv --out "$IWORK_DIR/smoke-sheet.csv" --quiet
+grep -Eq '(^|[^0-9])42(\.0)?([^0-9]|$)' "$IWORK_DIR/smoke-sheet.csv"
+
+# Everything the iWork round-trips created goes to the Trash (recoverable),
+# then the empty scratch dir is removed.
+for f in smoke.key smoke-deck.pdf smoke.pages smoke-letter.pdf smoke.numbers smoke-sheet.csv; do
+  "$MAC" finder trash "$IWORK_DIR/$f" --quiet
+done
+rmdir "$IWORK_DIR"
+
 echo "PASS"

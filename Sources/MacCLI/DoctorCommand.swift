@@ -38,6 +38,12 @@ struct DoctorCommand: AsyncParsableCommand {
                                bundleID: "com.apple.shortcuts.events", commandHint: "shortcuts run"),
             Self.automationRow("automation:Finder", app: "Finder",
                                bundleID: "com.apple.finder", commandHint: "finder"),
+            Self.automationRow("automation:Keynote", app: "Keynote",
+                               bundleID: "com.apple.iWork.Keynote", commandHint: "keynote"),
+            Self.automationRow("automation:Pages", app: "Pages",
+                               bundleID: "com.apple.iWork.Pages", commandHint: "pages"),
+            Self.automationRow("automation:Numbers", app: "Numbers",
+                               bundleID: "com.apple.iWork.Numbers", commandHint: "numbers"),
             Self.fullDiskAccessRow(),
         ], json: output.json)
     }
