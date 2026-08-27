@@ -22,17 +22,30 @@ public struct MailCommand: AsyncParsableCommand {
     struct Unread: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "List unread inbox messages.",
-            discussion: "Examples:\n  mac mail unread\n  mac mail unread --account Work --limit 10 --json"
+            discussion: """
+                Each account's inbox is examined only as deep as --scan (newest first).
+
+                Without --account, accounts are scanned smallest-inbox-first and \
+                scanning stops as soon as --limit is filled, so the result is a fast \
+                sample of your unread mail, NOT a guaranteed global newest-N. Pass \
+                --account for a deterministic per-account result.
+
+                Examples:
+                  mac mail unread
+                  mac mail unread --account Work --limit 10 --json
+                  mac mail unread --account Work --scan 200
+                """
         )
 
         @Option(help: "Only this account.") var account: String?
         @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
+        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
                 let items = try await MailActions(store: AppleScriptMailStore())
-                    .unread(account: account, limit: limit)
+                    .unread(account: account, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
             }
         }
@@ -41,17 +54,25 @@ public struct MailCommand: AsyncParsableCommand {
     struct Search: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Search inbox by subject or sender (not body).",
-            discussion: "Example:\n  mac mail search \"invoice\" --limit 10 --json"
+            discussion: """
+                Matches subject and sender within the newest --scan messages of each \
+                account's inbox — not the full mailbox. A message older than that \
+                window will not be found; raise --scan to look further back.
+
+                Example:
+                  mac mail search "invoice" --limit 10 --json
+                """
         )
 
         @Argument(help: "Text to match against subject and sender.") var query: String
         @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
+        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
                 let items = try await MailActions(store: AppleScriptMailStore())
-                    .search(query: query, limit: limit)
+                    .search(query: query, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
             }
         }
@@ -63,11 +84,12 @@ public struct MailCommand: AsyncParsableCommand {
         )
 
         @Argument(help: "Message id from 'mac mail unread' or 'mac mail search'.") var id: String
+        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let item = try await MailActions(store: AppleScriptMailStore()).read(id: id)
+                let item = try await MailActions(store: AppleScriptMailStore()).read(id: id, scan: scan)
                 Output.emit(item, json: output.json)
             }
         }
@@ -125,11 +147,12 @@ public struct MailCommand: AsyncParsableCommand {
         )
 
         @Argument(help: "Message id.") var id: String
+        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore()).markRead(id: id)
+                try await MailActions(store: AppleScriptMailStore()).markRead(id: id, scan: scan)
                 Output.emitConfirmation(key: "markedRead", value: id, human: "marked read",
                                         json: output.json, quiet: output.quiet)
             }
@@ -142,11 +165,12 @@ public struct MailCommand: AsyncParsableCommand {
         )
 
         @Argument(help: "Message id.") var id: String
+        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore()).archive(id: id)
+                try await MailActions(store: AppleScriptMailStore()).archive(id: id, scan: scan)
                 Output.emitConfirmation(key: "archived", value: id, human: "archived",
                                         json: output.json, quiet: output.quiet)
             }

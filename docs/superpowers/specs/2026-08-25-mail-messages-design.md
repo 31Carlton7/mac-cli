@@ -118,3 +118,56 @@ Same encoder conventions as v1: sorted keys, ISO 8601 dates, nil-omitting, exact
 - Messages send requires an exact handle; agents resolve names via `mac contacts find`.
 - SMS relay sends are best-effort; group chats are read-only.
 - Full Disk Access and per-app Automation consent are new prerequisites; `mac doctor` reports all of them.
+
+## Revision — live findings (2026-08-27)
+
+The Mail read layer shipped in this spec used AppleScript `whose` filtering
+(`messages of inbox whose read status is false`, `whose subject contains`,
+`first message of inbox whose message id is`). Live measurement against a real
+account set — **97,418 messages across 5 accounts** in the unified inbox —
+showed that design is unusable, and `whose` has been removed entirely.
+
+**What was measured**
+
+- `whose` on the unified inbox timed out at 90s and left Mail.app pinned at 98%
+  CPU for 9+ minutes, requiring a force-quit. Scoping `whose` to a single
+  account's mailbox also timed out. `whose` is now banned in `MailScripts`.
+- Bulk range fetch on the *unified* inbox: ~0.5s/message (a 50-message window
+  costs 25s). Also too slow.
+- Bulk range fetch on a **per-account real mailbox** is dramatically faster:
+  5 properties × 50 messages = 8s on a 9,521-message account. Cost is per
+  message touched and scales with mailbox size — ~0.15s/msg at 1,733 messages,
+  ~1.5s/msg at 51,893.
+- A per-account inbox message `count` is free (0s), so it works as a cost proxy.
+- Mail enumerates newest-first (index 1 = newest), confirmed.
+- `mailbox "Inbox" of account N` is **case-sensitive** and fails on accounts
+  whose mailbox is named `INBOX`, but AppleScript's `is` comparison is
+  case-insensitive. The inbox must therefore be found by scanning
+  `mailboxes of a` for `(name of m) is "Inbox"`, never by direct name lookup.
+
+**Replacement design**
+
+Per-account real mailboxes + bounded window + bulk property fetch + Swift-side
+filtering. `MailScripts` exposes `accountInboxes`, `window`, `find`, `markRead`,
+and `archive`, each scoped to one named account, each wrapped in
+`with timeout of 600 seconds` so a slow Mail surfaces as a clean error rather
+than a raw AppleEvent timeout. `window` issues five bulk range fetches
+(`message id`/`subject`/`sender`/`date received`/`read status` of
+`messages 1 thru k of mb`) and emits the same six-field record shape as before;
+`find` appends the body as a seventh field.
+
+`MailActions` owns the orchestration and the testable logic: it sorts accounts
+**smallest-inbox-first** using the free count, sweeps them calling `window`,
+filters in Swift, and **exits early** as soon as `--limit` is satisfied. A new
+`--scan` option (default 30, range 1–500) bounds the per-account window on
+`unread`, `search`, `read`, `mark-read`, and `archive`.
+
+**Contract consequences, documented in the README**
+
+- Reads see only the newest `--scan` messages per account; anything older is
+  invisible until `--scan` is raised.
+- Without `--account`, `unread` is a fast *sample* of unread mail, not a
+  guaranteed global newest-N — early exit means a large account may be skipped.
+  `--account` gives a deterministic per-account result.
+- `search` covers only that same window, not the full mailbox.
+- Large mailboxes remain slow (~1.5s/message on a 50k-message account).

@@ -59,8 +59,10 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **Duplicate calendar/list names** (e.g. "Personal" in two accounts) resolve to the first match.
 - Contact phone/email labels (mobile/work/home) are flattened to plain values.
 - **No clear-to-nil:** edit flags replace values. A due date, once set, cannot be removed; notes/location/org can be blanked by passing an empty string. Names and titles cannot be set to empty.
-- Mail search matches subject/sender only (no body search); reads are scoped to account inboxes.
-- Mail list ordering depends on Mail.app's own enumeration; `mac` over-fetches and re-sorts newest-first, which is reliable for typical inboxes but not guaranteed for very large unread counts.
+- **Mail reads are windowed.** Every read (`unread`, `search`, `read`, `mark-read`, `archive`) examines only the newest `--scan` messages (default 30) of each account's inbox. A message older than that window is invisible to `mac` — raise `--scan` (max 500) to look further back. AppleScript's `whose` filtering, which would search the whole mailbox, is unusable: on a 97k-message unified inbox it pins Mail.app at 98% CPU indefinitely.
+- **Without `--account`, `mac mail unread` is a fast sample, not a global newest-N.** Accounts are scanned smallest-inbox-first and scanning stops as soon as `--limit` is filled, so unread mail sitting in a large account may be omitted while a small account still has results. Pass `--account` for a deterministic per-account listing.
+- Mail search matches subject/sender only (no body search), and only within that same `--scan` window.
+- **Large mailboxes are slow.** Cost scales with messages touched: roughly 0.15s/message on a 1.7k-message account and ~1.5s/message on a 50k-message one. Keep `--scan` small on big accounts.
 - Mail composition is plain-text; no attachments.
 - Messages: group chats are read-only.
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.

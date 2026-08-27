@@ -6,6 +6,14 @@ final class MailCommandParsingTests: XCTestCase {
         _ = try MailCommand.parseAsRoot(["unread", "--account", "Work", "--limit", "10", "--json"])
     }
 
+    func testReadPathsAcceptScan() {
+        XCTAssertNoThrow(try MailCommand.parseAsRoot(["unread", "--scan", "100"]))
+        XCTAssertNoThrow(try MailCommand.parseAsRoot(["search", "invoice", "--scan", "100"]))
+        XCTAssertNoThrow(try MailCommand.parseAsRoot(["read", "<m1@x>", "--scan", "100"]))
+        XCTAssertNoThrow(try MailCommand.parseAsRoot(["mark-read", "<m1@x>", "--scan", "100"]))
+        XCTAssertNoThrow(try MailCommand.parseAsRoot(["archive", "<m1@x>", "--scan", "100"]))
+    }
+
     func testAccountsParses() {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["accounts", "--json"]))
     }
