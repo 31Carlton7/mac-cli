@@ -6,7 +6,32 @@ set -euo pipefail
 
 MAC="${MAC:-.build/release/mac}"
 
-json_field() { /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)[\"$1\"])"; }
+# Names the failing line instead of leaving a bare non-zero exit.
+trap 'echo "smoke: FAILED at line $LINENO -- see the error above" >&2' ERR
+
+# Extracts one field from JSON on stdin. Reports a clean diagnostic rather than a
+# Python traceback when the command upstream failed and produced no JSON.
+json_field() {
+  /usr/bin/python3 -c '
+import json, sys
+field = sys.argv[1]
+raw = sys.stdin.read()
+if not raw.strip():
+    sys.stderr.write("smoke: expected JSON from the previous command, got nothing "
+                     "(it failed -- its error is printed above)\n")
+    sys.exit(1)
+try:
+    data = json.loads(raw)
+except ValueError:
+    sys.stderr.write("smoke: previous command did not emit valid JSON:\n  %s\n" % raw[:200])
+    sys.exit(1)
+try:
+    print(data[field])
+except (KeyError, TypeError):
+    sys.stderr.write("smoke: JSON has no field %r (got: %s)\n" % (field, raw[:200]))
+    sys.exit(1)
+' "$1"
+}
 
 echo "== doctor =="
 "$MAC" doctor
