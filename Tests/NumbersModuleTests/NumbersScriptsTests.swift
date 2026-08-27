@@ -109,6 +109,9 @@ final class NumbersScriptsTests: XCTestCase {
         XCTAssertFalse(get.contains(#"table "3""#))
         XCTAssertFalse(get.contains(#"sheet "2""#))
         XCTAssertTrue(get.contains("missing value"))
+        // Success payloads carry the "IWORKOUT:" prefix so a cell whose text
+        // genuinely starts with "REFUSED:" can't be misread as a refusal.
+        XCTAssertTrue(get.contains(#"return "IWORKOUT:" & valueText"#))
 
         let set = NumbersScripts.setCell(doc: "Budget", sheet: 1, table: 1, cell: "C7", value: "42")
         XCTAssertTrue(set.contains(#"set value of cell "C7" of table 1 of sheet 1 of document "Budget" to "42""#))

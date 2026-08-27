@@ -103,6 +103,10 @@ final class PagesScriptsTests: XCTestCase {
     func testBodyVerbShapes() {
         XCTAssertTrue(PagesScripts.getBody(doc: "Letter")
             .contains(#"body text of document "Letter""#))
+        // Success payloads carry the "IWORKOUT:" prefix so a body that
+        // genuinely starts with "REFUSED:" can't be misread as a refusal.
+        XCTAssertTrue(PagesScripts.getBody(doc: "Letter")
+            .contains(#"return "IWORKOUT:" & bodyText"#))
         XCTAssertTrue(PagesScripts.setBody(doc: "Letter", text: "Hi")
             .contains(#"set body text of document "Letter" to "Hi""#))
 

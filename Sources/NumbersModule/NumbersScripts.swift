@@ -96,7 +96,9 @@ enum NumbersScripts {
     /// Returns the cell's value coerced to text as the payload; an empty cell
     /// (`missing value`) is coerced to "" instead of erroring. `cell` is a
     /// validated-and-uppercased A1 ref, `sheet`/`table` validated 1-based
-    /// Ints interpolated raw.
+    /// Ints interpolated raw. The success return is prefixed "IWORKOUT:" so
+    /// a cell whose text genuinely starts with "REFUSED:" can't collide with
+    /// the sentinel (same shape as the v4 Shortcuts SHORTCUTOUT fix).
     static func getCell(doc: String, sheet: Int, table: Int, cell: String) -> String {
         """
         tell application "Numbers"
@@ -113,7 +115,7 @@ enum NumbersScripts {
                 end if
             end timeout
         end tell
-        return valueText
+        return "IWORKOUT:" & valueText
         """
     }
 

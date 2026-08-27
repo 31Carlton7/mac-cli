@@ -44,12 +44,29 @@ final class AppleScriptNumbersStoreTests: XCTestCase {
         }
     }
 
-    /// getCell returns the script output verbatim as the payload (an empty
-    /// cell already comes back "" from the script's missing-value guard) —
-    /// cell values may contain arbitrary text, so no record parsing.
-    func testCellPayloadPassesThroughVerbatimAfterRefusalCheck() {
-        XCTAssertNoThrow(try AppleScriptNumbersStore.checkRefused("42.5"))
-        XCTAssertNoThrow(try AppleScriptNumbersStore.checkRefused(""))
-        XCTAssertThrowsError(try AppleScriptNumbersStore.checkRefused("REFUSED:no such cell"))
+    // MARK: - Cell payload: IWORKOUT: stripping
+
+    /// getCell's script prefixes every real result with "IWORKOUT:" so a cell
+    /// whose text genuinely starts with "REFUSED:" can't be misread as a
+    /// refusal (same collision the v4 Shortcuts SHORTCUTOUT fix solved). An
+    /// empty cell comes back "IWORKOUT:" (the script's missing-value guard)
+    /// and strips to "".
+    func testMapPayloadStripsPrefixAndSurvivesRefusedLookalikeValues() throws {
+        XCTAssertEqual(try AppleScriptNumbersStore.mapPayload("IWORKOUT:42.5"), "42.5")
+        XCTAssertEqual(try AppleScriptNumbersStore.mapPayload("IWORKOUT:"), "")
+        XCTAssertEqual(try AppleScriptNumbersStore.mapPayload("IWORKOUT:REFUSED: gotcha"), "REFUSED: gotcha")
+    }
+
+    func testMapPayloadThrowsOnRefusalAndPassesBareOutputDefensively() {
+        XCTAssertThrowsError(try AppleScriptNumbersStore.mapPayload("REFUSED:no such cell")) { error in
+            guard let macError = error as? MacError else {
+                return XCTFail("expected MacError, got \(error)")
+            }
+            XCTAssertEqual(macError.code, .badInput)
+            XCTAssertEqual(macError.message, "Numbers refused: no such cell")
+        }
+        // Defensive: a bare non-prefixed, non-REFUSED result (should never
+        // happen given the script's shape) passes through unchanged.
+        XCTAssertEqual(try? AppleScriptNumbersStore.mapPayload("bare output"), "bare output")
     }
 }

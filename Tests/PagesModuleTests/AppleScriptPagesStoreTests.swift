@@ -44,12 +44,34 @@ final class AppleScriptPagesStoreTests: XCTestCase {
         }
     }
 
-    /// getBody returns the script output verbatim as the payload — body text
-    /// legitimately contains newlines and separator-ish characters, so the
-    /// store must not run it through record parsing.
-    func testBodyPayloadPassesThroughVerbatimAfterRefusalCheck() throws {
-        let body = "Line one\nLine two\(fs)with control chars"
-        XCTAssertNoThrow(try AppleScriptPagesStore.checkRefused(body))
-        XCTAssertThrowsError(try AppleScriptPagesStore.checkRefused("REFUSED:no such document"))
+    // MARK: - Body payload: IWORKOUT: stripping
+
+    /// getBody's script prefixes every real result with "IWORKOUT:" so a body
+    /// whose text genuinely starts with "REFUSED:" can't be misread as a
+    /// refusal (same collision the v4 Shortcuts SHORTCUTOUT fix solved). The
+    /// payload passes through verbatim after the prefix strip — body text
+    /// legitimately contains newlines and separator-ish characters, so no
+    /// record parsing.
+    func testMapPayloadStripsPrefixAndSurvivesRefusedLookalikeBodies() throws {
+        XCTAssertEqual(try AppleScriptPagesStore.mapPayload("IWORKOUT:Dear Sam,"), "Dear Sam,")
+        XCTAssertEqual(try AppleScriptPagesStore.mapPayload("IWORKOUT:"), "")
+        XCTAssertEqual(try AppleScriptPagesStore.mapPayload("IWORKOUT:REFUSED: gotcha"), "REFUSED: gotcha")
+
+        let body = "IWORKOUT:Line one\nLine two\(fs)with control chars"
+        XCTAssertEqual(try AppleScriptPagesStore.mapPayload(body),
+                       "Line one\nLine two\(fs)with control chars")
+    }
+
+    func testMapPayloadThrowsOnRefusalAndPassesBareOutputDefensively() {
+        XCTAssertThrowsError(try AppleScriptPagesStore.mapPayload("REFUSED:no such document")) { error in
+            guard let macError = error as? MacError else {
+                return XCTFail("expected MacError, got \(error)")
+            }
+            XCTAssertEqual(macError.code, .badInput)
+            XCTAssertEqual(macError.message, "Pages refused: no such document")
+        }
+        // Defensive: a bare non-prefixed, non-REFUSED result (should never
+        // happen given the script's shape) passes through unchanged.
+        XCTAssertEqual(try? AppleScriptPagesStore.mapPayload("bare output"), "bare output")
     }
 }

@@ -22,9 +22,7 @@ public final class AppleScriptPagesStore: PagesStore {
 
     public func getBody(doc: String) async throws -> String {
         let out = try await AppleScript.run(PagesScripts.getBody(doc: doc), targetName: "Pages")
-        try Self.checkRefused(out)
-        // Payload, not records — body text passes through verbatim.
-        return out
+        return try Self.mapPayload(out)
     }
 
     public func setBody(doc: String, text: String) async throws {
@@ -54,6 +52,21 @@ public final class AppleScriptPagesStore: PagesStore {
         guard output.hasPrefix("REFUSED:") else { return }
         let message = String(output.dropFirst("REFUSED:".count))
         throw MacError(.badInput, "Pages refused: \(message)")
+    }
+
+    /// Maps getBody's raw return value: "REFUSED:<message>" -> badInput;
+    /// "IWORKOUT:<payload>" -> the payload, stripped of its prefix — the
+    /// prefix is what keeps a body that genuinely starts with "REFUSED:"
+    /// from being misread as a refusal (same collision the v4 Shortcuts
+    /// SHORTCUTOUT fix solved). Anything else (defensive, should never
+    /// happen given the script's shape) is passed through unchanged rather
+    /// than dropped.
+    static func mapPayload(_ output: String) throws -> String {
+        try checkRefused(output)
+        if output.hasPrefix("IWORKOUT:") {
+            return String(output.dropFirst("IWORKOUT:".count))
+        }
+        return output
     }
 
     /// Doc rows: name FS pathOrEmpty FS modifiedText. Empty path -> nil

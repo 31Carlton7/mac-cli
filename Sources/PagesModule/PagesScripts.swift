@@ -91,8 +91,11 @@ enum PagesScripts {
     // MARK: - Body text
 
     /// Returns the document's body text VERBATIM as the payload (no record
-    /// separators — the store passes it straight through). Wrapped in try ->
-    /// REFUSED because a stale name specifier refuses at fetch time.
+    /// separators — the store strips the prefix and passes it straight
+    /// through). Wrapped in try -> REFUSED because a stale name specifier
+    /// refuses at fetch time; the success return is prefixed "IWORKOUT:" so
+    /// a body that genuinely starts with "REFUSED:" can't collide with the
+    /// sentinel (same shape as the v4 Shortcuts SHORTCUTOUT fix).
     static func getBody(doc: String) -> String {
         """
         tell application "Pages"
@@ -104,7 +107,7 @@ enum PagesScripts {
                 end try
             end timeout
         end tell
-        return bodyText
+        return "IWORKOUT:" & bodyText
         """
     }
 
