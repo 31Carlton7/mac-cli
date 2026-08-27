@@ -124,7 +124,7 @@ Same encoder conventions as v1: sorted keys, ISO 8601 dates, nil-omitting, exact
 The Mail read layer shipped in this spec used AppleScript `whose` filtering
 (`messages of inbox whose read status is false`, `whose subject contains`,
 `first message of inbox whose message id is`). Live measurement against a real
-account set — **97,418 messages across 5 accounts** in the unified inbox —
+account set — **roughly 100,000 messages across five accounts** in the unified inbox —
 showed that design is unusable, and `whose` has been removed entirely.
 
 **What was measured**

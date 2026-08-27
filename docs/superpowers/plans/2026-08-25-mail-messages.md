@@ -13,7 +13,7 @@
 - TDD: tests first, observe the failure, implement, observe the pass. Fix implementations, not expectations; report BLOCKED if an expectation seems wrong.
 - Every commit message ends with the trailer `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>` on its own line.
 - NEVER run live `mac mail`/`mac messages` data commands during implementation (Automation/FDA auto-deny in agent shells; live verification is the user-run smoke test). `swift test`, `swift build`, and `--help` are always safe.
-- Working directory: `/Users/carltonaikins/Desktop/Home/Work/Projects/mac-cli`, branch `v2` (create from `main` before Task 1: `git checkout -b v2`).
+- Working directory: `<repo root>`, branch `v2` (create from `main` before Task 1: `git checkout -b v2`).
 
 Baseline: 56 tests green on `main`.
 
