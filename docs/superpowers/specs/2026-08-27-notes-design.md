@@ -69,6 +69,7 @@ Same encoder conventions: sorted keys, ISO 8601 dates, nil-omitting, exact-strin
 - Unknown id / folder / account → `notFound` with an actionable hint (`Run: mac notes folders`).
 - Ambiguous folder name → `badInput` naming the account candidates and pointing at `--account` (candidates sorted, capped at 5).
 - Empty title/query/append text, both edit flags absent, limit out of range → `badInput`.
+- `add` with `--account` but no `--folder` → `badInput` (there is exactly one default folder; an account alone is not a target).
 - Automation consent denied → the runner's existing `permissionDenied` (-1743) mapping; `mac doctor` gains an `automation:Notes` row.
 - Unmapped AppleScript failures → existing `internal` envelope.
 
