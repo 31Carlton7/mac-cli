@@ -124,11 +124,15 @@ echo "== call (dry-run only -- never dials) =="
 "$MAC" facetime "smoke@example.com" --dry-run --audio | grep -q "facetime-audio://"
 
 echo "== finder =="
-SMOKE_FILE="$(mktemp /tmp/mac-cli-smoke-XXXX.txt)"
+SMOKE_FILE="$(mktemp /tmp/mac-cli-smoke-XXXXXX)"
 echo hello > "$SMOKE_FILE"
 "$MAC" finder disks >/dev/null
 "$MAC" finder selection >/dev/null
 "$MAC" finder trash "$SMOKE_FILE" --quiet
-[ ! -f "$SMOKE_FILE" ] && echo "   (trash verified: file left original location)"
+if [ -f "$SMOKE_FILE" ]; then
+  echo "smoke: finder trash left the file in place" >&2
+  exit 1
+fi
+echo "   (trash verified: file left original location)"
 
 echo "PASS"

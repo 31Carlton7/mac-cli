@@ -21,7 +21,7 @@ mac finder eject <name>         # eject a removable volume by exact name
 
 - **Non-goals:** empty-trash (permanently destructive — excluded on principle), file copy/move/rename/mkdir (shells do this better), window management, label/tag editing, desktop settings.
 - Paths: actions expand `~` and relativize to absolute via FileManager; nonexistent path for reveal/open/trash → clean `notFound` BEFORE any AppleScript. Trash by exact path only.
-- `eject`: exact name match against `disks` output; unknown → notFound naming `mac finder disks`; non-ejectable → badInput.
+- `eject`: case-insensitive name match against `disks` output; unknown → notFound naming `mac finder disks`; non-ejectable → badInput.
 - All conventions carry: escape everything, timeouts, no `whose`, FS/RS records, --json/--quiet, emitConfirmation ("trashed", "ejected"; reveal/open → "revealed"/"opened" with the path), exit codes, locked schemas.
 
 ## Models (Core)
