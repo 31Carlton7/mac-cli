@@ -1,6 +1,6 @@
 # mac: your Mac's apps, on the command line
 
-Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers and Shortcuts, driven from one binary, plus phone and FaceTime calls. Built for AI agents and the humans who drive them: every command has `--json`, stable exit codes, and IDs you can trust.
+Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers and Shortcuts, driven from one binary, plus phone and FaceTime calls. Built for AI agents and the humans who drive them.
 
     git clone https://github.com/31Carlton7/mac-cli.git && cd mac-cli && make install
 
