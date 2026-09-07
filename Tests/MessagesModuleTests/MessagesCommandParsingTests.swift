@@ -14,5 +14,14 @@ final class MessagesCommandParsingTests: XCTestCase {
     func testSendRequiresHandleAndText() {
         XCTAssertThrowsError(try MessagesCommand.parseAsRoot(["send", "+15551234567"]))
         XCTAssertNoThrow(try MessagesCommand.parseAsRoot(["send", "+15551234567", "hello"]))
+        XCTAssertNoThrow(try MessagesCommand.parseAsRoot(["send", "+15551234567", "hello", "--dry-run", "--json"]))
+        XCTAssertNoThrow(try MessagesCommand.parseAsRoot(["send", "+15551234567", "hello", "--verify"]))
+    }
+
+    func testSearchRequiresQueryAndAcceptsBounds() {
+        XCTAssertThrowsError(try MessagesCommand.parseAsRoot(["search"]))
+        XCTAssertNoThrow(try MessagesCommand.parseAsRoot([
+            "search", "reservation", "--chat", "+15551234567", "--limit", "10", "--scan", "1000", "--json"
+        ]))
     }
 }

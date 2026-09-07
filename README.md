@@ -37,7 +37,9 @@ mac mail unread --limit 10
 mac mail search "invoice"
 mac mail draft --to a@b.com --subject "Hi" --body "..."
 mac messages history +15551234567
-mac messages send +15551234567 "Running 10 min late"
+mac messages search "reservation" --chat +15551234567 --scan 5000
+mac messages send +15551234567 "Running 10 min late" --dry-run
+mac messages send +15551234567 "Running 10 min late" --verify
 mac notes list --folder Ideas
 mac notes search "brunch"
 mac notes add "Meeting notes" --body "Attendees: ..." --folder Work
@@ -74,7 +76,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
 - Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
-- `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
+- `mac messages send` takes exact handles only — resolve names with `mac contacts find` first. Use `--dry-run` to validate without opening Messages; use `--verify` when you need the outgoing row observed in local history.
 - `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
 - `mac shortcuts run` is the escape hatch for unscriptable apps: wrap the task in a Shortcut and run it by name or id.
 - `mac finder trash` is the recoverable delete: the item goes to the Trash, same as dragging it there in Finder, and can be restored until the Trash is emptied — prefer it over `rm` for user files.
@@ -94,8 +96,9 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Mail composition is plain-text; no attachments.
 - Messages: group chats are read-only.
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.
+- `mac messages search` checks decoded message text within the newest `--scan` rows (default 5,000, max 50,000), optionally scoped with `--chat`. It is bounded rather than a guaranteed full-archive search.
 - `mac messages send` requires an exact handle — it does no normalization.
-- **A successful `mac messages send` is not proof of delivery.** Messages accepts sends to handles that were never registered with iMessage (typos, SMS-only contacts) without a synchronous error. Verify by reading the thread back with `mac messages history`.
+- **An accepted `mac messages send` is not proof of delivery.** Messages accepts sends to handles that were never registered with iMessage (typos, SMS-only contacts) without a synchronous error. `--verify` requires the outgoing row to appear in local history, but even that proves local acceptance rather than recipient delivery.
 - Notes: password-protected notes appear in listings but their bodies read as empty; `delete` moves to Recently Deleted (recoverable) rather than erasing; folder names are resolved per-name, so duplicates across accounts need `--account`; checklists and attachments flatten to plain text.
 - **`mac music search`/`mac music playlists` see your library, not the Apple Music catalog.** Songs you haven't added won't turn up in search, and Apple Music's `whose`-based library search is unusable at scale (the same measured cost that ruled out `whose` for Mail) — `mac music` and `mac tv` resolve a track/playlist by id via the one sanctioned `whose persistent ID is "<id>"` lookup, run under a 30s timeout, since that shape stayed fast in measurement.
 - `mac shortcuts run` blocks until the shortcut finishes; a shortcut that shows its own dialogs or waits on user input will hang the command until that shortcut completes.

@@ -20,12 +20,41 @@ public struct MessageActions {
             .sorted { $0.date < $1.date }
     }
 
-    public func send(handle: String, text: String) async throws {
+    public func search(query: String, handle: String?, limit: Int, scan: Int) async throws -> [MessageItem] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { throw MacError(.badInput, "Search query cannot be empty.") }
+        let trimmedHandle = try handle.map(validated(handle:))
+        try validate(limit: limit)
+        guard (1...50_000).contains(scan), scan >= limit else {
+            throw MacError(.badInput, "--scan must be between --limit and 50000.")
+        }
+        return try await store.search(query: trimmedQuery, handle: trimmedHandle, limit: limit, scan: scan)
+    }
+
+    public func send(handle: String, text: String, dryRun: Bool = false,
+                     verify: Bool = false) async throws -> MessageSendReceipt {
         let trimmed = try validated(handle: handle)
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw MacError(.badInput, "Message text cannot be empty.")
         }
+        guard !(dryRun && verify) else {
+            throw MacError(.badInput, "--dry-run and --verify cannot be used together.")
+        }
+        if dryRun { return MessageSendReceipt(handle: trimmed, status: .previewed) }
+        let started = Date().addingTimeInterval(-2)
         try await store.send(handle: trimmed, text: text)
+        guard verify else { return MessageSendReceipt(handle: trimmed, status: .accepted) }
+
+        for attempt in 0..<5 {
+            let messages = try await store.history(handle: trimmed, limit: 20)
+            if let match = messages.first(where: {
+                $0.isFromMe && $0.text == text && $0.date >= started
+            }) {
+                return MessageSendReceipt(handle: trimmed, status: .verified, messageID: match.id)
+            }
+            if attempt < 4 { try await Task.sleep(nanoseconds: 400_000_000) }
+        }
+        throw MacError(.badInput, "Messages accepted the send, but it was not observed in history. Delivery is unknown; check the conversation before retrying.")
     }
 
     func validated(handle: String) throws -> String {
