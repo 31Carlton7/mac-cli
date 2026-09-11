@@ -63,11 +63,10 @@ echo "   (a draft window opened in Mail — close it whenever)"
 echo "== messages =="
 if [ -n "${SMOKE_HANDLE:-}" ]; then
   "$MAC" messages chats --limit 3 >/dev/null
-  "$MAC" messages send "$SMOKE_HANDLE" "mac-cli smoke test" --quiet
-  sleep 2
-  "$MAC" messages history "$SMOKE_HANDLE" --limit 5 | grep -q "mac-cli smoke test"
+  "$MAC" messages send "$SMOKE_HANDLE" "mac-cli smoke test" --verify --quiet
 else
   "$MAC" messages chats --limit 3 >/dev/null
+  "$MAC" messages send "+15551234567" "mac-cli dry-run smoke" --dry-run --quiet
   echo "   (set SMOKE_HANDLE=+1555… to also test send+history round-trip)"
 fi
 

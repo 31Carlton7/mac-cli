@@ -24,6 +24,13 @@ final class MockMessageStore: MessageStore {
         return Array(storedMessages.filter { $0.chat == handle }.prefix(limit))
     }
 
+    func search(query: String, handle: String?, limit: Int, scan: Int) async throws -> [MessageItem] {
+        try gate()
+        return Array(storedMessages.filter {
+            (handle == nil || $0.chat == handle) && $0.text.localizedCaseInsensitiveContains(query)
+        }.prefix(limit))
+    }
+
     func send(handle: String, text: String) async throws {
         try gate()
         sent.append((handle, text))
@@ -58,7 +65,7 @@ final class MessageActionsTests: XCTestCase {
 
     func testSendEmptyTextThrowsBadInput() async {
         do {
-            try await actions.send(handle: "+15551234567", text: "  ")
+            _ = try await actions.send(handle: "+15551234567", text: "  ")
             XCTFail("expected badInput")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .badInput)
@@ -75,9 +82,33 @@ final class MessageActionsTests: XCTestCase {
     }
 
     func testSendPassesThrough() async throws {
-        try await actions.send(handle: "+15551234567", text: "hello")
+        let receipt = try await actions.send(handle: "+15551234567", text: "hello")
         XCTAssertEqual(store.sent.count, 1)
         XCTAssertEqual(store.sent[0].text, "hello")
+        XCTAssertEqual(receipt.status, .accepted)
+    }
+
+    func testDryRunDoesNotSend() async throws {
+        let receipt = try await actions.send(handle: " +15551234567 ", text: "hello", dryRun: true)
+        XCTAssertTrue(store.sent.isEmpty)
+        XCTAssertEqual(receipt, MessageSendReceipt(handle: "+15551234567", status: .previewed))
+    }
+
+    func testVerifyFindsRecentOutgoingMessage() async throws {
+        store.storedMessages = [MessageItem(id: "verified-guid", chat: "+15551234567", sender: "me",
+                                            text: "hello", date: Date(), isFromMe: true)]
+        let receipt = try await actions.send(handle: "+15551234567", text: "hello", verify: true)
+        XCTAssertEqual(receipt.status, .verified)
+        XCTAssertEqual(receipt.messageID, "verified-guid")
+    }
+
+    func testSearchValidatesBoundedScan() async {
+        do {
+            _ = try await actions.search(query: "hello", handle: nil, limit: 30, scan: 20)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
     }
 
     func testPermissionDeniedPropagates() async {

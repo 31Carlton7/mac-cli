@@ -9,14 +9,16 @@ enum MessagesScripts {
 
     static func send(handle: String, text: String) -> String {
         """
-        tell application "Messages"
-            try
-                set svc to 1st account whose service type = iMessage
-            on error
-                return "\(noAccountSentinel)"
-            end try
-            send "\(AppleScript.escape(text))" to participant "\(AppleScript.escape(handle))" of svc
-        end tell
+        with timeout of 30 seconds
+            tell application "Messages"
+                try
+                    set svc to 1st account whose service type = iMessage
+                on error
+                    return "\(noAccountSentinel)"
+                end try
+                send "\(AppleScript.escape(text))" to participant "\(AppleScript.escape(handle))" of svc
+            end tell
+        end timeout
         return "ok"
         """
     }

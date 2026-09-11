@@ -7,5 +7,7 @@ public protocol MessageStore {
     /// The most recent `limit` messages with the handle, in any order —
     /// MessageActions sorts them oldest-to-newest for display.
     func history(handle: String, limit: Int) async throws -> [MessageItem]
+    /// Searches the newest `scan` readable messages, optionally in one chat.
+    func search(query: String, handle: String?, limit: Int, scan: Int) async throws -> [MessageItem]
     func send(handle: String, text: String) async throws
 }

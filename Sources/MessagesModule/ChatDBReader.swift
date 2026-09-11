@@ -94,26 +94,55 @@ public final class ChatDBReader {
             sqlite3_bind_int64(stmt, Int32(limitIndex), clamped(limit))
 
             var out: [MessageItem] = []
-            try forEachRow(db, stmt) { s in
-                let isFromMe = sqlite3_column_int(s, 6) == 1
-                let inlineText = text(s, 3)
-                let hasInlineText = sqlite3_column_type(s, 3) != SQLITE_NULL && !inlineText.isEmpty
-                let body: String
-                if hasInlineText {
-                    body = inlineText
-                } else if sqlite3_column_type(s, 4) != SQLITE_NULL,
-                          let decoded = Self.extractText(fromAttributedBody: blob(s, 4)) {
-                    body = decoded
-                } else {
-                    body = Self.unsupportedContent
+            try forEachRow(db, stmt) { out.append(message(from: $0)) }
+            return out
+        }
+    }
+
+    public func search(query: String, handle: String?, limit: Int, scan: Int) throws -> [MessageItem] {
+        try withDB { db in
+            var chatIDs: [Int64] = []
+            if let handle {
+                chatIDs = try chatRowIDs(db, handle: handle)
+                guard !chatIDs.isEmpty else {
+                    throw MacError(.notFound, "No conversation found for handle '\(handle)'. Try the exact handle from: mac messages chats")
                 }
-                out.append(MessageItem(
-                    id: text(s, 0),
-                    chat: text(s, 1),
-                    sender: isFromMe ? "me" : (sqlite3_column_type(s, 2) != SQLITE_NULL ? text(s, 2) : text(s, 1)),
-                    text: body,
-                    date: Self.date(fromAppleEpoch: sqlite3_column_int64(s, 5)),
-                    isFromMe: isFromMe))
+            }
+
+            let chatClause: String
+            if chatIDs.isEmpty {
+                chatClause = ""
+            } else {
+                let placeholders = (1...chatIDs.count).map { "?\($0)" }.joined(separator: ",")
+                chatClause = " AND cmj.chat_id IN (\(placeholders))"
+            }
+            let scanIndex = chatIDs.count + 1
+            let sql = """
+            SELECT m.guid,
+                   COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) AS chat,
+                   h.id AS sender, m.text, m.attributedBody, m.date, m.is_from_me
+            FROM message m
+            JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+            JOIN chat c ON c.ROWID = cmj.chat_id
+            LEFT JOIN handle h ON h.ROWID = m.handle_id
+            WHERE 1\(chatClause)\(noiseFilter(db))
+            ORDER BY m.date DESC
+            LIMIT ?\(scanIndex);
+            """
+            let stmt = try prepare(db, sql)
+            defer { sqlite3_finalize(stmt) }
+            for (i, chatID) in chatIDs.enumerated() {
+                sqlite3_bind_int64(stmt, Int32(i + 1), chatID)
+            }
+            sqlite3_bind_int64(stmt, Int32(scanIndex), clamped(scan))
+
+            var out: [MessageItem] = []
+            try forEachRow(db, stmt) { s in
+                guard out.count < limit else { return }
+                let item = message(from: s)
+                if item.text.localizedCaseInsensitiveContains(query) {
+                    out.append(item)
+                }
             }
             return out
         }
@@ -261,6 +290,27 @@ public final class ChatDBReader {
     private func blob(_ stmt: OpaquePointer, _ col: Int32) -> Data {
         guard let base = sqlite3_column_blob(stmt, col) else { return Data() }
         return Data(bytes: base, count: Int(sqlite3_column_bytes(stmt, col)))
+    }
+
+    private func message(from stmt: OpaquePointer) -> MessageItem {
+        let isFromMe = sqlite3_column_int(stmt, 6) == 1
+        let inlineText = text(stmt, 3)
+        let body: String
+        if sqlite3_column_type(stmt, 3) != SQLITE_NULL && !inlineText.isEmpty {
+            body = inlineText
+        } else if sqlite3_column_type(stmt, 4) != SQLITE_NULL,
+                  let decoded = Self.extractText(fromAttributedBody: blob(stmt, 4)) {
+            body = decoded
+        } else {
+            body = Self.unsupportedContent
+        }
+        return MessageItem(
+            id: text(stmt, 0),
+            chat: text(stmt, 1),
+            sender: isFromMe ? "me" : (sqlite3_column_type(stmt, 2) != SQLITE_NULL ? text(stmt, 2) : text(stmt, 1)),
+            text: body,
+            date: Self.date(fromAppleEpoch: sqlite3_column_int64(stmt, 5)),
+            isFromMe: isFromMe)
     }
 
     private static func digitsOnly(_ s: String) -> String {

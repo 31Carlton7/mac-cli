@@ -65,3 +65,29 @@ public struct ConversationInfo: Codable, Equatable, HumanRenderable {
         return "\(id)  \(name)  \(humanDate.string(from: lastActivity))\(group)"
     }
 }
+
+public struct MessageSendReceipt: Codable, Equatable, HumanRenderable {
+    public enum Status: String, Codable {
+        case previewed
+        case accepted
+        case verified
+    }
+
+    public let handle: String
+    public let status: Status
+    public let messageID: String?
+
+    public init(handle: String, status: Status, messageID: String? = nil) {
+        self.handle = handle
+        self.status = status
+        self.messageID = messageID
+    }
+
+    public var humanLine: String {
+        switch status {
+        case .previewed: return "would send to \(handle)"
+        case .accepted: return "accepted by Messages for \(handle) (delivery unverified)"
+        case .verified: return "sent to \(handle) and observed in history"
+        }
+    }
+}

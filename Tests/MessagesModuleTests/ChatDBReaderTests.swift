@@ -255,6 +255,52 @@ final class ChatDBReaderTests: XCTestCase {
         XCTAssertEqual(Set(items.map { $0.id }), ["g-3", "g-2"]) // the two newest of g-0...g-3
     }
 
+    func testSearchFindsInlineAndAttributedBodyText() throws {
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertMessage(db, rowID: 1, guid: "g-inline", text: "Dinner reservation", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+            self.insertMessage(db, rowID: 2, guid: "g-blob", text: nil,
+                                blob: self.typedStreamBlob(text: "RESERVATION confirmed"),
+                                date: self.appleEpochNS(60), isFromMe: true, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 2)
+            self.insertMessage(db, rowID: 3, guid: "g-other", text: "unrelated", blob: nil,
+                                date: self.appleEpochNS(120), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 3)
+        }
+        let items = try ChatDBReader(path: path).search(query: "reservation", handle: nil, limit: 10, scan: 10)
+        XCTAssertEqual(items.map(\.id), ["g-blob", "g-inline"])
+    }
+
+    func testSearchCanBeScopedToAChat() throws {
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertChat(db, rowID: 2, identifier: "+15557654321")
+            self.insertMessage(db, rowID: 1, guid: "g-a", text: "same phrase", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+            self.insertMessage(db, rowID: 2, guid: "g-b", text: "same phrase", blob: nil,
+                                date: self.appleEpochNS(60), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 2, messageID: 2)
+        }
+        let items = try ChatDBReader(path: path).search(query: "phrase", handle: "+15551234567", limit: 10, scan: 10)
+        XCTAssertEqual(items.map(\.id), ["g-a"])
+    }
+
+    func testSearchScanWindowIsActuallyBounded() throws {
+        let path = makeFixtureDB { db in
+            self.insertChat(db, rowID: 1, identifier: "+15551234567")
+            self.insertMessage(db, rowID: 1, guid: "g-old", text: "needle", blob: nil,
+                                date: self.appleEpochNS(0), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 1)
+            self.insertMessage(db, rowID: 2, guid: "g-new", text: "haystack", blob: nil,
+                                date: self.appleEpochNS(60), isFromMe: false, handleID: nil)
+            self.joinChatMessage(db, chatID: 1, messageID: 2)
+        }
+        XCTAssertTrue(try ChatDBReader(path: path).search(query: "needle", handle: nil, limit: 10, scan: 1).isEmpty)
+    }
+
     func testHandleNormalization() throws {
         let path = makeFixtureDB { db in
             self.insertChat(db, rowID: 1, identifier: "+15551234567")

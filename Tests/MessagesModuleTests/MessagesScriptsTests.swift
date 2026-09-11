@@ -13,5 +13,6 @@ final class MessagesScriptsTests: XCTestCase {
         let script = MessagesScripts.send(handle: "+15551234567", text: "hi")
         XCTAssertTrue(script.contains("NOIMESSAGEACCOUNT"))
         XCTAssertTrue(script.contains("on error"))
+        XCTAssertTrue(script.contains("with timeout of 30 seconds"))
     }
 }

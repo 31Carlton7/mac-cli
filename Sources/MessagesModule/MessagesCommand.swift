@@ -6,7 +6,7 @@ public struct MessagesCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "messages",
         abstract: "Read iMessage history and send messages.",
-        subcommands: [Chats.self, History.self, Send.self]
+        subcommands: [Chats.self, History.self, Search.self, Send.self]
     )
 
     public init() {}
@@ -23,6 +23,27 @@ public struct MessagesCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 let items = try await MessageActions(store: LiveMessageStore()).conversations(limit: limit)
+                Output.emit(items, json: output.json)
+            }
+        }
+    }
+
+    struct Search: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Search recent message text.",
+            discussion: "Searches a bounded window, including attributed message bodies.\nExample:\n  mac messages search \"reservation\" --chat +15551234567 --scan 5000 --json"
+        )
+
+        @Argument(help: "Text to find (case-insensitive).") var query: String
+        @Option(help: "Optional exact handle or chat identifier.") var chat: String?
+        @Option(help: "Maximum matches (default: 30).") var limit: Int = 30
+        @Option(help: "Newest messages to inspect (default: 5000; max: 50000).") var scan: Int = 5_000
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let items = try await MessageActions(store: LiveMessageStore())
+                    .search(query: query, handle: chat, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
             }
         }
@@ -55,13 +76,15 @@ public struct MessagesCommand: AsyncParsableCommand {
 
         @Argument(help: "Phone number or iMessage email (exact — no name lookup).") var handle: String
         @Argument(help: "Message text.") var text: String
+        @Flag(help: "Validate and preview without opening Messages or sending.") var dryRun = false
+        @Flag(help: "Poll local history and require the outgoing message to appear.") var verify = false
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MessageActions(store: LiveMessageStore()).send(handle: handle, text: text)
-                Output.emitConfirmation(key: "sent", value: handle, human: "sent to",
-                                        json: output.json, quiet: output.quiet)
+                let receipt = try await MessageActions(store: LiveMessageStore())
+                    .send(handle: handle, text: text, dryRun: dryRun, verify: verify)
+                if output.json || !output.quiet { Output.emit(receipt, json: output.json) }
             }
         }
     }
