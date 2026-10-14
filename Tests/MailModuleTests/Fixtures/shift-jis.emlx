@@ -1,0 +1,21 @@
+342       
+From: Sam Rivera <sam@example.com>
+To: Jordan Lee <jordan@example.org>
+Date: Tue, 14 Oct 2025 09:30:00 -0700
+Message-ID: <fixture-sjis@example.com>
+Subject: =?Shift_JIS?B?k/qWe4zqgsyMj5a8?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=Shift_JIS
+Content-Transfer-Encoding: base64
+
+grGC8YLJgr+CzYFBkKKKRYFCg2WDWINngsWCt4FCCg==
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-received</key>
+	<integer>1760000000</integer>
+	<key>flags</key>
+	<integer>8590195713</integer>
+</dict>
+</plist>

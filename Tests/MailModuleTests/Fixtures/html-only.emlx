@@ -1,0 +1,30 @@
+736       
+From: Sam Rivera <sam@example.com>
+To: Jordan Lee <jordan@example.org>
+Date: Tue, 14 Oct 2025 09:30:00 -0700
+Message-ID: <fixture-html@example.com>
+Subject: HTML only
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html><head><title>Ignored title</title><style>p { color: red; }</style></head>
+<body><script>var hidden =3D 1;</script>
+<h1>Welcome&nbsp;back</h1>
+<p>Fish &amp; chips &lt;today&gt; &#8212; &#x263A; &copy;</p>
+<p>Read <a href=3D"https://example.com/post?a=3D1&amp;b=3D2">the post</a> or <a href=3D"https://=
+example.com/bare">https://example.com/bare</a>.</p>
+<!-- a comment -->
+<div>Line one<br>Line   two</div>
+<ul><li>First</li><li>Second</li></ul>
+</body></html>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-received</key>
+	<integer>1760000000</integer>
+	<key>flags</key>
+	<integer>8590195713</integer>
+</dict>
+</plist>

@@ -1,0 +1,52 @@
+1084       
+From: Sam Rivera <sam@example.com>
+To: Jordan Lee <jordan@example.org>
+Date: Tue, 14 Oct 2025 09:30:00 -0700
+Message-ID: <fixture-nested@example.com>
+Subject: Nested with attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed"
+
+--mixed
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Report attached.
+--alt
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+
+<p>Report attached. <img src=3D"cid:logo"></p>
+--rel
+Content-Type: image/png
+Content-ID: <logo>
+Content-Disposition: inline
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgpzeW50aGV0aWM=
+--rel--
+--alt--
+--mixed
+Content-Type: application/pdf; name="ignored.pdf"
+Content-Disposition: attachment;
+ filename*=utf-8''Q3%20report%20%E2%80%94%20final.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgc3ludGhldGljIGZpeHR1cmUgYnl0ZXMKJVBERi0xLjQgc3ludGhldGljIGZpeHR1
+cmUgYnl0ZXMKJVBERi0xLjQgc3ludGhldGljIGZpeHR1cmUgYnl0ZXMK
+--mixed--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-received</key>
+	<integer>1760000000</integer>
+	<key>flags</key>
+	<integer>8590195713</integer>
+</dict>
+</plist>

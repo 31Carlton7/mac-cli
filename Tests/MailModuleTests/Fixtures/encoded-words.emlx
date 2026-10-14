@@ -1,0 +1,30 @@
+761       
+From: =?UTF-8?Q?Rivera=2C_Sam?= <sam@example.com>
+To: "Lee, Jordan" <jordan@example.org>, casey@example.net (Casey Kim),
+ team: alex@example.com, "Bo \"B\" Park" <bo@example.com>;
+Cc: =?ISO-8859-1?Q?Ren=E9?= <rene@example.fr>
+Reply-To: replies@example.com
+Date: Wed, 1 Oct 2025 18:05:09 +0200 (CEST)
+Message-ID: <encoded-words@example.com>
+In-Reply-To: <parent@example.com>
+References: <root@example.com>
+ <parent@example.com>
+List-Unsubscribe: <mailto:leave@example.com?subject=unsubscribe>,
+ <https://example.com/unsubscribe?u=1>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Subject: =?UTF-8?B?UHJpY2Ug4g==?=
+ =?UTF-8?B?gqw1?= and =?utf-8?q?q=5Fwords_with_spaces?= done
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Body.
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-received</key>
+	<integer>1760000000</integer>
+	<key>flags</key>
+	<integer>8590195713</integer>
+</dict>
+</plist>

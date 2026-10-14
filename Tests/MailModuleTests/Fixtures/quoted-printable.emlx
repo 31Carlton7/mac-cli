@@ -1,0 +1,23 @@
+384       
+From: Sam Rivera <sam@example.com>
+To: Jordan Lee <jordan@example.org>
+Date: Tue, 14 Oct 2025 09:30:00 -0700
+Message-ID: <fixture-qp@example.com>
+Subject: Quoted printable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Caf=C3=A9 opens at nine =E2=80=94 a soft line break joins th=
+is word.
+Equals stays: 2 + 2 =3D 4
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-received</key>
+	<integer>1760000000</integer>
+	<key>flags</key>
+	<integer>8590195713</integer>
+</dict>
+</plist>

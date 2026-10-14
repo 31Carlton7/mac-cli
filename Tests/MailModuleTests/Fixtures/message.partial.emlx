@@ -1,0 +1,31 @@
+504       
+From: Sam Rivera <sam@example.com>
+To: Jordan Lee <jordan@example.org>
+Date: Tue, 14 Oct 2025 09:30:00 -0700
+Message-ID: <fixture-partial@example.com>
+Subject: Partial
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed"
+
+--mixed
+Content-Type: text/plain; charset=utf-8
+
+See the slides.
+--mixed
+Content-Type: application/vnd.ms-powerpoint; name="slides.ppt"
+Content-Disposition: attachment; filename="slides.ppt"
+Content-Transfer-Encoding: base64
+X-Apple-Content-Length: 2097152
+
+
+--mixed--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-received</key>
+	<integer>1760000000</integer>
+	<key>flags</key>
+	<integer>8590195713</integer>
+</dict>
+</plist>

@@ -45,7 +45,7 @@ let package = Package(
         .testTarget(name: "CalendarModuleTests", dependencies: ["CalendarModule"]),
         .testTarget(name: "RemindersModuleTests", dependencies: ["RemindersModule"]),
         .testTarget(name: "ContactsModuleTests", dependencies: ["ContactsModule"]),
-        .testTarget(name: "MailModuleTests", dependencies: ["MailModule"]),
+        .testTarget(name: "MailModuleTests", dependencies: ["MailModule"], resources: [.copy("Fixtures")]),
         .testTarget(name: "MessagesModuleTests", dependencies: ["MessagesModule"]),
         .testTarget(name: "NotesModuleTests", dependencies: ["NotesModule"]),
         .testTarget(name: "MusicModuleTests", dependencies: ["MusicModule"]),
