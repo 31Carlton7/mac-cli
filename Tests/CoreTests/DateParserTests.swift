@@ -43,6 +43,59 @@ final class DateParserTests: XCTestCase {
         XCTAssertEqual(parse("+30m"), now.addingTimeInterval(30 * 60))
     }
 
+    func testYesterday() {
+        XCTAssertEqual(parse("yesterday"), date(2026, 8, 24))
+        XCTAssertEqual(parse("yesterday 9am"), date(2026, 8, 24, 9, 0))
+    }
+
+    func testPastOffsetsAndWeeks() {
+        XCTAssertEqual(parse("-2h"), now.addingTimeInterval(-2 * 3_600))
+        XCTAssertEqual(parse("-30m"), now.addingTimeInterval(-30 * 60))
+        XCTAssertEqual(parse("-3d"), date(2026, 8, 22, 10, 0))
+        XCTAssertEqual(parse("+1w"), date(2026, 9, 1, 10, 0))
+        XCTAssertEqual(parse("-1w"), date(2026, 8, 18, 10, 0))
+        XCTAssertNil(parse("2h"))       // a bare offset only means the past to parsePast
+        XCTAssertNil(parse("-5x"))
+        XCTAssertNil(parse("+-5d"))
+    }
+
+    func testParsePastReadsBareOffsetsAsAgo() {
+        func past(_ s: String) -> Date? { DateParser.parsePast(s, now: now, calendar: cal) }
+        XCTAssertEqual(past("2h"), now.addingTimeInterval(-2 * 3_600))
+        XCTAssertEqual(past("30m"), now.addingTimeInterval(-30 * 60))
+        XCTAssertEqual(past("3d"), date(2026, 8, 22, 10, 0))
+        XCTAssertEqual(past("1w"), date(2026, 8, 18, 10, 0))
+        XCTAssertEqual(past("-2h"), now.addingTimeInterval(-2 * 3_600))
+        XCTAssertEqual(past(" 3D "), date(2026, 8, 22, 10, 0))
+        // Everything else reads as parse does.
+        XCTAssertEqual(past("2026-08-01"), date(2026, 8, 1))
+        XCTAssertEqual(past("2026-08-01 14:00"), date(2026, 8, 1, 14, 0))
+        XCTAssertEqual(past("yesterday"), date(2026, 8, 24))
+        XCTAssertEqual(past("2pm"), date(2026, 8, 25, 14, 0))
+        XCTAssertEqual(past("14:30"), date(2026, 8, 25, 14, 30))
+        XCTAssertNil(past(""))
+        XCTAssertNil(past("2"))
+        XCTAssertNil(past("soon"))
+    }
+
+    func testPastDayOffsetIsDSTCorrect() {
+        var ny = Calendar(identifier: .gregorian)
+        ny.timeZone = TimeZone(identifier: "America/New_York")!
+        // 2026-03-09 10:00 EDT; 3d back crosses spring-forward and stays at 10:00.
+        let start = ny.date(from: DateComponents(year: 2026, month: 3, day: 9, hour: 10))!
+        let expected = ny.date(from: DateComponents(year: 2026, month: 3, day: 6, hour: 10))!
+        XCTAssertEqual(DateParser.parsePast("3d", now: start, calendar: ny), expected)
+    }
+
+    func testParsePastRejectsOffsetsBeyondACentury() {
+        func past(_ s: String) -> Date? { DateParser.parsePast(s, now: now, calendar: cal) }
+        for s in ["1e20h", "-1e20h", "+1e20d", "infd", "-infd", "+infm", "1e300w", "5300w"] {
+            XCTAssertNil(past(s), s)
+        }
+        XCTAssertNotNil(past("5200w"))
+        XCTAssertNotNil(past("36000d"))
+    }
+
     func testRejects() {
         XCTAssertNil(parse(""))
         XCTAssertNil(parse("nonsense"))

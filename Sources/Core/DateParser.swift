@@ -2,13 +2,14 @@ import Foundation
 
 public enum DateParser {
     /// Accepts ISO ("2026-08-27 14:00", "2026-08-27"), naturals ("today",
-    /// "tomorrow 9am", "friday"), time-only ("2pm", "14:30" = today), and
-    /// offsets ("+7d", "+2h", "+30m"). Returns nil on anything else.
+    /// "tomorrow 9am", "yesterday", "friday"), time-only ("2pm", "14:30" = today),
+    /// and offsets ("+7d", "+2h", "+30m", "+1w", or "-2h" for the past).
+    /// Returns nil on anything else.
     public static func parse(_ input: String, now: Date, calendar: Calendar) -> Date? {
         let s = input.trimmingCharacters(in: .whitespaces).lowercased()
         guard !s.isEmpty else { return nil }
 
-        if s.hasPrefix("+") { return offset(s, from: now, calendar: calendar) }
+        if s.hasPrefix("+") || s.hasPrefix("-") { return offset(s, from: now, calendar: calendar) }
         if let d = formatter("yyyy-MM-dd HH:mm", calendar).date(from: s) { return d }
         if let d = formatter("yyyy-MM-dd", calendar).date(from: s) { return d }
 
@@ -26,6 +27,8 @@ public enum DateParser {
             day = calendar.startOfDay(for: now)
         case "tomorrow":
             day = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
+        case "yesterday":
+            day = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now))
         default:
             day = weekdayNumber(dayWord).flatMap { next(weekday: $0, after: now, calendar: calendar) }
         }
@@ -33,6 +36,22 @@ public enum DateParser {
         guard let t = time else { return base }
         return calendar.date(bySettingHour: t.hour, minute: t.minute, second: 0, of: base)
     }
+
+    /// For looking back, as search does: a bare offset ("2h", "3d", "1w", "30m")
+    /// means that long ago, so "3d" is the same as "-3d". Everything else reads
+    /// as `parse` reads it. An offset longer than `maxPastOffset` is nil.
+    public static func parsePast(_ input: String, now: Date, calendar: Calendar) -> Date? {
+        let s = input.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let first = s.first, first.isNumber || first == "+" || first == "-",
+              let date = offset(first.isNumber ? "-" + s : s, from: now, calendar: calendar) else {
+            return parse(s, now: now, calendar: calendar)
+        }
+        return abs(date.timeIntervalSince(now)) <= maxPastOffset ? date : nil
+    }
+
+    /// A century, past any date mail carries. Infinite and huge offsets such
+    /// as `1e20h` would overflow whatever converts the date to whole seconds.
+    static let maxPastOffset: TimeInterval = 100 * 366 * 86_400
 
     static func formatter(_ format: String, _ calendar: Calendar) -> DateFormatter {
         let f = DateFormatter()
@@ -44,15 +63,17 @@ public enum DateParser {
     }
 
     static func offset(_ s: String, from now: Date, calendar: Calendar) -> Date? {
-        guard s.count >= 3, let value = Double(s.dropFirst().dropLast()) else { return nil }
+        guard s.count >= 3, let magnitude = Double(s.dropFirst().dropLast()), magnitude >= 0 else { return nil }
+        let value = s.hasPrefix("-") ? -magnitude : magnitude
         switch s.last {
-        case "d":
+        case "d", "w":
             // Calendar-day arithmetic keeps "+7d" at the same wall-clock time across
             // DST transitions; fall back to elapsed time for fractional or huge values.
-            if value == value.rounded(), let days = Int(exactly: value) {
-                return calendar.date(byAdding: .day, value: days, to: now)
+            let days = s.last == "w" ? value * 7 : value
+            if days == days.rounded(), let whole = Int(exactly: days) {
+                return calendar.date(byAdding: .day, value: whole, to: now)
             }
-            return now.addingTimeInterval(value * 86_400)
+            return now.addingTimeInterval(days * 86_400)
         case "h": return now.addingTimeInterval(value * 3_600)
         case "m": return now.addingTimeInterval(value * 60)
         default: return nil
