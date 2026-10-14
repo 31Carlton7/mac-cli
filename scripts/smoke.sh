@@ -67,6 +67,7 @@ for verb in archive delete flag; do
     echo "smoke: $verb of an unknown id should fail" >&2; exit 1
   fi
 done
+"$MAC" mail open "<smoke+1@example.com>" --dry-run | grep -q "message://%3Csmoke%2B1@example.com%3E"
 "$MAC" mail draft --to "smoke@example.com" --subject "mac-cli smoke draft — safe to close" --body "Created by scripts/smoke.sh; close this window." --quiet
 printf 'smoke attachment\n' > "${TMPDIR:-/tmp}/mac-cli-smoke.txt"
 "$MAC" mail send --to "smoke@example.com" --markdown "**smoke**" --attach "${TMPDIR:-/tmp}/mac-cli-smoke.txt" --dry-run --json | json_field html | grep -q "<strong>smoke</strong>"

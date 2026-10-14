@@ -171,4 +171,38 @@ final class MailCommandParsingTests: XCTestCase {
         let json = Output.render(ComposePreview(draft, send: true), json: true)
         XCTAssertEqual(json, #"{"action":"send","attachments":["\/tmp\/a.pdf"],"html":"<p>x<\/p>","subject":"s","to":"a@b.com"}"#)
     }
+
+    // MARK: - `open`
+
+    func testOpenParsesIdAndDryRun() throws {
+        let parsed = try MailCommand.parseAsRoot(["open", "<m1@x>", "--dry-run", "--json"]) as? MailCommand.Open
+        XCTAssertEqual(parsed?.id, "<m1@x>")
+        XCTAssertEqual(parsed?.dryRun, true)
+        XCTAssertThrowsError(try MailCommand.parseAsRoot(["open"]))
+    }
+
+    // SAFETY: --dry-run must never reach the opener, so this suite never drives Mail.
+    func testOpenDryRunNeverInvokesOpener() async throws {
+        var invoked = false
+        let previousOpener = MailCommand.Open.opener
+        MailCommand.Open.opener = { _ in invoked = true }
+        defer { MailCommand.Open.opener = previousOpener }
+
+        let command = try MailCommand.parseAsRoot(["open", "m1@example.com", "--dry-run"]) as! MailCommand.Open
+        await command.run()
+
+        XCTAssertFalse(invoked, "dry-run must never invoke the opener")
+    }
+
+    func testOpenInvokesInjectedOpenerWithMessageURL() async throws {
+        var capturedURL: URL?
+        let previousOpener = MailCommand.Open.opener
+        MailCommand.Open.opener = { url in capturedURL = url }
+        defer { MailCommand.Open.opener = previousOpener }
+
+        let command = try MailCommand.parseAsRoot(["open", "<m1+x@example.com>"]) as! MailCommand.Open
+        await command.run()
+
+        XCTAssertEqual(capturedURL?.absoluteString, "message://%3Cm1%2Bx@example.com%3E")
+    }
 }

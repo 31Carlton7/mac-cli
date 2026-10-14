@@ -42,6 +42,7 @@ mac mail read <id>
 mac mail archive <id> <id> --dry-run
 mac mail flag <id>
 mac mail move <id> --to Projects --dry-run
+mac mail open abc123@example.com
 mac mail draft --to a@b.com --subject "Hi" --body "..."
 mac mail draft --to a@b.com --subject "Notes" --markdown-file notes.md --attach report.pdf
 mac mail mailboxes create 2026 --parent Projects --account Work --dry-run
@@ -116,6 +117,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **Mailbox system names are matched by name.** `mac mail mailboxes delete`/`rename` recognise system mailboxes from a fixed list of English, German, French and Spanish names and Gmail's `[Gmail]/` folders; a provider that names its system folders differently is not protected by that check (the empty-mailbox check still applies to delete).
 - **HTML mail's plain-text part is Mail's own.** `--html` and `--markdown` set Mail's undocumented `html content` property, the one scripted route to an HTML body that worked in testing. Mail wraps the HTML in a quote block, so the plain-text alternative it generates at send time prefixes every line with `> `, and a saved draft's plain-text part stays empty until it is sent.
 - Markdown covers headings, paragraphs, one level of lists, quotes, fenced code, rules, inline code, emphasis, and http/https/mailto links. Raw HTML in Markdown is shown as text.
+- **`mac mail open` does not look the message up.** It hands Mail a `message:` URL built from the id, so it works on any message Mail has, but an `opened` confirmation is not proof the id exists: Mail opens no window and shows no error for an unknown one.
 - Messages: group chats are read-only.
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.
 - `mac messages send` requires an exact handle — it does no normalization.

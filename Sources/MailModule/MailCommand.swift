@@ -121,7 +121,7 @@ public struct MailCommand: AsyncParsableCommand {
         abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, List.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
-                      Archive.self, Move.self, Delete.self, Accounts.self, Mailboxes.self]
+                      Archive.self, Move.self, Delete.self, Open.self, Accounts.self, Mailboxes.self]
     )
 
     public init() {}
@@ -496,6 +496,41 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await target.run(.delete, output: output)
+        }
+    }
+
+    struct Open: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show a message in Mail.app, by exact id.",
+            discussion: """
+                Opens Mail's message: URL for the id; no mailbox is scanned, so \
+                --scan does not apply. The id may include its angle brackets.
+
+                Examples:
+                  mac mail open abc123@example.com
+                  mac mail open "<abc123@example.com>" --dry-run
+                """
+        )
+
+        /// Overridable so tests can capture the URL instead of ever really opening one.
+        static var opener: (URL) throws -> Void = openViaSystemOpen
+
+        @Argument(help: "Message id.") var id: String
+        @ArgumentParser.Flag(help: "Print the message: URL without opening it.") var dryRun = false
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let url = try MessageURL.url(id: id)
+                if dryRun {
+                    Output.emitConfirmation(key: "url", value: url.absoluteString, human: "would open",
+                                            json: output.json, quiet: output.quiet)
+                } else {
+                    try Self.opener(url)
+                    Output.emitConfirmation(key: "opened", value: url.absoluteString, human: "opened",
+                                            json: output.json, quiet: output.quiet)
+                }
+            }
         }
     }
 
