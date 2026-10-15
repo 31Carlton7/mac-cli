@@ -56,6 +56,12 @@ CONTACT_ID=$("$MAC" contacts add --name "Mac Smoketest" --email "smoke@example.c
 
 echo "== mail =="
 "$MAC" mail unread --limit 3 >/dev/null
+# Any category Mail reports must be one of its four.
+"$MAC" mail unread --limit 50 --json | /usr/bin/python3 -c '
+import json, sys
+bad = {i.get("category") for i in json.load(sys.stdin)} - {None, "primary", "transactions", "updates", "promotions"}
+assert not bad, "smoke: unexpected mail categories %r" % bad
+'
 "$MAC" mail search "mac-cli-smoke-should-match-nothing" --json | grep -q '\[\]'
 "$MAC" mail search 'subject:mac-cli-smoke-should-match-nothing newer:1d -in:inbox' --json | grep -q '\[\]'
 # An id Mail does not have exits 1 (notFound).

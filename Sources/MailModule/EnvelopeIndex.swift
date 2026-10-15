@@ -64,6 +64,11 @@ public struct IndexedMessage: Equatable {
     public let isRead: Bool
     public let isFlagged: Bool
     public let hasAttachments: Bool
+    /// Mail's on-device category; nil until Mail has categorised the message.
+    public var category: MailQuery.Category?
+    /// Apple Intelligence's summary, which Mail writes for a few messages only.
+    public var summary: String?
+    public var isPriority = false
     public var to: [String] = []
     public var cc: [String] = []
 }
@@ -80,6 +85,9 @@ public final class EnvelopeIndex {
 
     private let location: Result<String, MacError>
     private var db: OpaquePointer?
+    /// Categories, priority and summaries arrived with Apple Intelligence; an
+    /// index without them still answers every other read.
+    private var hasOnDeviceData = false
 
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -98,6 +106,12 @@ public final class EnvelopeIndex {
            r.message, r.address, r.type, r.position, t.message
     FROM messages m, mailboxes mb, subjects s, addresses a, summaries su,
          message_global_data g, labels l, recipients r, attachments t
+    LIMIT 0;
+    """
+
+    private static let onDeviceProbe = """
+    SELECT g.model_category, g.urgent, g.generated_summary, gs.summary
+    FROM message_global_data g, generated_summaries gs
     LIMIT 0;
     """
 
@@ -281,6 +295,8 @@ public final class EnvelopeIndex {
         (m.mailbox IN (\(inboxIDs)) OR EXISTS (SELECT 1 FROM labels l WHERE l.message_id = m.ROWID AND l.mailbox_id IN (\(inboxIDs))))
         """
         let keep = collapseCopies ? "WHERE p.copy = 1" : ""
+        let onDevice = hasOnDeviceData ? "g.model_category, g.urgent, gs.summary" : "NULL, NULL, NULL"
+        let summaries = hasOnDeviceData ? "LEFT JOIN generated_summaries gs ON gs.ROWID = g.generated_summary" : ""
         let sql = """
         WITH hits AS (
             SELECT m.ROWID AS id, m.global_message_id AS gid, m.date_received AS received,
@@ -297,13 +313,14 @@ public final class EnvelopeIndex {
                COALESCE(a.address, ''), COALESCE(a.comment, ''),
                m.date_received, m.read, m.flagged, p.in_inbox,
                EXISTS (SELECT 1 FROM attachments t WHERE t.message = m.ROWID),
-               mb.ROWID, mb.url, mb.total_count
+               mb.ROWID, mb.url, mb.total_count, \(onDevice)
         FROM picked p
         JOIN messages m ON m.ROWID = p.id
         JOIN mailboxes mb ON mb.ROWID = m.mailbox
         LEFT JOIN message_global_data g ON g.ROWID = m.global_message_id
         LEFT JOIN subjects s ON s.ROWID = m.subject
         LEFT JOIN addresses a ON a.ROWID = m.sender
+        \(summaries)
         \(keep)
         ORDER BY p.received DESC, p.id DESC
         LIMIT ?;
@@ -316,7 +333,7 @@ public final class EnvelopeIndex {
         var out: [IndexedMessage] = []
         try forEachRow(db, stmt) { s in
             guard let mailbox = mailbox(s, 10) else { return }
-            out.append(IndexedMessage(
+            var message = IndexedMessage(
                 rowID: sqlite3_column_int64(s, 0),
                 messageID: Self.bareMessageID(text(s, 1)),
                 mailbox: mailbox,
@@ -326,7 +343,13 @@ public final class EnvelopeIndex {
                 date: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(s, 5))),
                 isRead: sqlite3_column_int(s, 6) != 0,
                 isFlagged: sqlite3_column_int(s, 7) != 0,
-                hasAttachments: sqlite3_column_int(s, 9) != 0))
+                hasAttachments: sqlite3_column_int(s, 9) != 0)
+            if sqlite3_column_type(s, 13) != SQLITE_NULL {
+                message.category = MailQuery.Category(modelCategory: Int(sqlite3_column_int(s, 13)))
+            }
+            message.isPriority = sqlite3_column_int(s, 14) == 1
+            message.summary = blob(s, 15).flatMap(Self.generatedSummary)
+            out.append(message)
         }
         try addRecipients(db, to: &out)
         return out
@@ -399,6 +422,9 @@ public final class EnvelopeIndex {
                     "Mail's Envelope Index at \(path) has a layout this version of mac does not recognise (\(detail)). Run: mac doctor"))
             }
         }
+        var onDevice: OpaquePointer?
+        hasOnDeviceData = sqlite3_prepare_v2(handle, Self.onDeviceProbe, -1, &onDevice, nil) == SQLITE_OK
+        sqlite3_finalize(onDevice)
         db = handle
         return handle
     }
@@ -442,6 +468,11 @@ public final class EnvelopeIndex {
         }
     }
 
+    private func blob(_ stmt: OpaquePointer, _ col: Int32) -> Data? {
+        guard let bytes = sqlite3_column_blob(stmt, col) else { return nil }
+        return Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, col)))
+    }
+
     private func text(_ stmt: OpaquePointer, _ col: Int32) -> String {
         guard let c = sqlite3_column_text(stmt, col) else { return "" }
         return String(cString: c)
@@ -458,6 +489,25 @@ public final class EnvelopeIndex {
         if id.hasPrefix("<") { id.removeFirst() }
         if id.hasSuffix(">") { id.removeLast() }
         return id
+    }
+
+    /// `generated_summaries.summary` is a keyed archive holding an attributed
+    /// `topLine` and an optional `synopsis`. Anything unreadable is no summary.
+    static func generatedSummary(_ archive: Data) -> String? {
+        guard let unarchiver = try? NSKeyedUnarchiver(forReadingFrom: archive) else { return nil }
+        defer { unarchiver.finishDecoding() }
+        let classes = [NSAttributedString.self, NSString.self]
+        for key in ["generatedSummary.topLine", "generatedSummary.synopsis"] {
+            let text: String
+            switch unarchiver.decodeObject(of: classes, forKey: key) {
+            case let attributed as NSAttributedString: text = attributed.string
+            case let plain as String: text = plain
+            default: continue
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
     }
 
     /// The shape Mail.app's `sender` property uses: `Name <address>`, the

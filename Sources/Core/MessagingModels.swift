@@ -16,6 +16,7 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
     public let hasAttachments: Bool?
     public let category: String?
     public let summary: String?
+    public let isPriority: Bool?
     /// Only when the message file was read.
     public let attachments: [EmailAttachment]?
 
@@ -23,7 +24,7 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
                 isRead: Bool, account: String, body: String?,
                 mailbox: String? = nil, to: [String]? = nil, cc: [String]? = nil,
                 isFlagged: Bool? = nil, hasAttachments: Bool? = nil,
-                category: String? = nil, summary: String? = nil,
+                category: String? = nil, summary: String? = nil, isPriority: Bool? = nil,
                 attachments: [EmailAttachment]? = nil) {
         self.id = id
         self.subject = subject
@@ -39,12 +40,19 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
         self.hasAttachments = hasAttachments
         self.category = category
         self.summary = summary
+        self.isPriority = isPriority
         self.attachments = attachments
     }
 
+    /// Primary is Mail's default category, so only the others are tagged.
+    /// The summary is left to `--json`.
     public var humanLine: String {
-        let unread = isRead ? "" : "  [unread]"
-        return "\(id.isEmpty ? "(no Message-ID)" : id)  \(subject)  \(from)  \(humanDate.string(from: date))\(unread)"
+        var tags: [String] = []
+        if !isRead { tags.append("unread") }
+        if isPriority == true { tags.append("priority") }
+        if let category, category != "primary" { tags.append(category) }
+        let suffix = tags.map { "  [\($0)]" }.joined()
+        return "\(id.isEmpty ? "(no Message-ID)" : id)  \(subject)  \(from)  \(humanDate.string(from: date))\(suffix)"
     }
 }
 

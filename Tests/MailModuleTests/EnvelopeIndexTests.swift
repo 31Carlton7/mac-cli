@@ -25,6 +25,8 @@ enum EnvelopeIndexFixture {
     CREATE TABLE message_global_data (ROWID INTEGER PRIMARY KEY AUTOINCREMENT,
         message_id INTEGER, model_category INTEGER, generated_summary INTEGER, urgent INTEGER,
         message_id_header TEXT COLLATE BINARY, UNIQUE(message_id) ON CONFLICT ABORT);
+    CREATE TABLE generated_summaries (ROWID INTEGER PRIMARY KEY AUTOINCREMENT,
+        summary BLOB NOT NULL, status INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE messages (ROWID INTEGER PRIMARY KEY AUTOINCREMENT,
         message_id INTEGER NOT NULL DEFAULT 0,
         global_message_id INTEGER NOT NULL,
@@ -68,6 +70,9 @@ enum EnvelopeIndexFixture {
     /// Gmail `GM` (Personal): INBOX is a label mailbox over All Mail.
     /// Exchange `EX` (Work): `ews://`, inbox spelled `Inbox`.
     /// Plain IMAP `IM` (Home): its own INBOX rows. `OLD` (Old) is disabled.
+    /// Categories: 101 transactions and priority with a summary, 102
+    /// promotions, 104 primary, 105 promotions with an unreadable summary,
+    /// 107/108 updates, 112 not categorised yet.
     static let mail = """
     INSERT INTO mailboxes (ROWID, url, total_count, source) VALUES
         (1, 'imap://GM/INBOX', 2, 3),
@@ -89,13 +94,16 @@ enum EnvelopeIndexFixture {
         (3, 'desk@example.com', 'Invoice Desk'), (4, 'me@example.com', 'Me'),
         (5, 'boss@example.com', '');
     INSERT INTO summaries (ROWID, summary) VALUES (1, ''), (2, 'Your invoice is attached.');
-    INSERT INTO message_global_data (ROWID, message_id, message_id_header) VALUES
-        (1, 1, '<inv-1042@example.com>'), (2, 2, '<inv-arch@example.com>'),
-        (3, 3, '<inv-trash@example.com>'), (4, 4, '<q-inv@example.com>'),
-        (5, 5, '<lunch@example.com>'), (6, 6, '<deleted@example.com>'),
-        (7, 7, '<dup@example.com>'), (8, 8, '<old@example.com>'),
-        (9, 9, '<hello@example.com>'), (10, 10, '<read@example.com>'),
-        (11, 11, NULL), (12, 12, '<pct@example.com>');
+    INSERT INTO generated_summaries (ROWID, summary) VALUES
+        (1, \(summaryArchive(" Invoice 1042 is due Friday.\n"))), (2, X'626F677573');
+    INSERT INTO message_global_data (ROWID, message_id, message_id_header,
+                                     model_category, urgent, generated_summary) VALUES
+        (1, 1, '<inv-1042@example.com>', 1, 1, 1), (2, 2, '<inv-arch@example.com>', 3, 0, NULL),
+        (3, 3, '<inv-trash@example.com>', 3, NULL, NULL), (4, 4, '<q-inv@example.com>', 0, 0, NULL),
+        (5, 5, '<lunch@example.com>', 3, 0, 2), (6, 6, '<deleted@example.com>', 0, NULL, NULL),
+        (7, 7, '<dup@example.com>', 2, 0, NULL), (8, 8, '<old@example.com>', 2, NULL, NULL),
+        (9, 9, '<hello@example.com>', 0, NULL, NULL), (10, 10, '<read@example.com>', 0, NULL, NULL),
+        (11, 11, NULL, NULL, NULL, NULL), (12, 12, '<pct@example.com>', 0, NULL, NULL);
     INSERT INTO messages (ROWID, global_message_id, sender, subject_prefix, subject, summary,
                           date_received, mailbox, read, flagged, deleted) VALUES
         (101, 1, 1, NULL, 1, 1, 1787961600, 3, 0, 1, 0),
@@ -116,6 +124,16 @@ enum EnvelopeIndexFixture {
         (101, 4, 0, 0), (101, 5, 1, 0), (104, 4, 0, 0);
     INSERT INTO attachments (message, attachment_id, name) VALUES (101, '2', 'invoice.pdf');
     """
+
+    /// Mail's shape for `generated_summaries.summary`: a keyed archive with
+    /// an attributed `topLine` and a null `synopsis`, as a SQL blob literal.
+    static func summaryArchive(_ topLine: String) -> String {
+        let archiver = NSKeyedArchiver(requiringSecureCoding: true)
+        archiver.encode(nil as Any?, forKey: "generatedSummary.synopsis")
+        archiver.encode(NSAttributedString(string: topLine), forKey: "generatedSummary.topLine")
+        archiver.finishEncoding()
+        return "X'" + archiver.encodedData.map { String(format: "%02X", $0) }.joined() + "'"
+    }
 
     static let accounts = [
         MailAccount(id: "GM", name: "Personal", isEnabled: true),
@@ -246,9 +264,44 @@ final class EnvelopeIndexTests: XCTestCase {
         XCTAssertEqual(item?.to, ["Me <me@example.com>"])
         XCTAssertEqual(item?.cc, ["boss@example.com"])
         XCTAssertEqual(item?.date, Date(timeIntervalSince1970: 1_787_961_600))
-        XCTAssertNil(item?.category)
-        XCTAssertNil(item?.summary)
         XCTAssertNil(item?.body)
+    }
+
+    // MARK: - On-device data
+
+    func testItemsCarryMailsCategoryPriorityAndSummary() async throws {
+        let items = try await store.unread(account: nil, limit: 20)
+        XCTAssertEqual(ids(items), ["inv-1042@example.com", "q-inv@example.com", "dup@example.com", ""])
+        XCTAssertEqual(items.map(\.category), ["transactions", "primary", "updates", nil])
+        XCTAssertEqual(items.map(\.isPriority), [true, false, false, false])
+        XCTAssertEqual(items.map(\.summary), ["Invoice 1042 is due Friday.", nil, nil, nil])
+    }
+
+    func testSearchCarriesOnDeviceDataToo() async throws {
+        let items = try await store.search(MailQuery(parsing: "category:promotions"), limit: 20)
+        XCTAssertEqual(ids(items), ["inv-arch@example.com", "lunch@example.com"])
+        XCTAssertEqual(items.map(\.category), ["promotions", "promotions"])
+        XCTAssertEqual(items.map(\.summary), [nil, nil], "an unreadable summary archive is no summary")
+    }
+
+    func testIndexWithoutSummariesStillReadsWithoutOnDeviceData() async throws {
+        let path = EnvelopeIndexFixture.make(
+            schema: EnvelopeIndexFixture.schema.replacingOccurrences(of: "CREATE TABLE generated_summaries", with: "CREATE TABLE other_summaries"),
+            rows: EnvelopeIndexFixture.mail.replacingOccurrences(of: "INSERT INTO generated_summaries", with: "INSERT INTO other_summaries"))
+        let store = IndexMailStore(index: EnvelopeIndex(path: path), directory: mail.directory)
+        let items = try await store.unread(account: nil, limit: 20)
+        XCTAssertEqual(ids(items), ["inv-1042@example.com", "q-inv@example.com", "dup@example.com", ""])
+        XCTAssertEqual(items.map(\.category), [nil, nil, nil, nil])
+        XCTAssertEqual(items.map(\.summary), [nil, nil, nil, nil])
+    }
+
+    func testGeneratedSummaryFallsBackToTheSynopsis() {
+        let archiver = NSKeyedArchiver(requiringSecureCoding: true)
+        archiver.encode(NSAttributedString(string: "  "), forKey: "generatedSummary.topLine")
+        archiver.encode("Two lines about the invoice." as NSString, forKey: "generatedSummary.synopsis")
+        archiver.finishEncoding()
+        XCTAssertEqual(EnvelopeIndex.generatedSummary(archiver.encodedData), "Two lines about the invoice.")
+        XCTAssertNil(EnvelopeIndex.generatedSummary(Data("bplist00".utf8)))
     }
 
     // MARK: - search

@@ -39,6 +39,12 @@ public struct MailQuery: Equatable {
             case .promotions: return 3
             }
         }
+
+        /// Nil for a value Mail has not been seen to use.
+        public init?(modelCategory: Int) {
+            guard let match = Self.allCases.first(where: { $0.modelCategory == modelCategory }) else { return nil }
+            self = match
+        }
     }
 
     public enum Predicate: Equatable {

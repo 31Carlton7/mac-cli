@@ -425,6 +425,7 @@ public struct IndexMailStore {
                          mailbox: message.isInInbox ? "Inbox" : message.mailbox.path,
                          to: message.to, cc: message.cc,
                          isFlagged: message.isFlagged, hasAttachments: message.hasAttachments,
-                         attachments: attachments)
+                         category: message.category?.rawValue, summary: message.summary,
+                         isPriority: message.isPriority, attachments: attachments)
     }
 }
