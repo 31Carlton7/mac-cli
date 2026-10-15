@@ -109,6 +109,8 @@ final class DateParserTests: XCTestCase {
         XCTAssertEqual(DurationParser.parse("30m"), 1_800)
         XCTAssertEqual(DurationParser.parse("1h30m"), 5_400)
         XCTAssertEqual(DurationParser.parse("2d"), 172_800)
+        XCTAssertEqual(DurationParser.parse("45s"), 45)
+        XCTAssertEqual(DurationParser.parse("1m30s"), 90)
         XCTAssertNil(DurationParser.parse("banana"))
         XCTAssertNil(DurationParser.parse("90"))
     }

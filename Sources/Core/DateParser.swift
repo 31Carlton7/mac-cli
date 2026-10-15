@@ -118,7 +118,7 @@ public enum DateParser {
 }
 
 public enum DurationParser {
-    /// "1h", "30m", "1h30m", "2d" -> seconds. Requires an explicit unit.
+    /// "1h", "30m", "1h30m", "2d", "45s" -> seconds. Requires an explicit unit.
     public static func parse(_ input: String) -> TimeInterval? {
         let s = input.trimmingCharacters(in: .whitespaces).lowercased()
         guard !s.isEmpty else { return nil }
@@ -135,6 +135,7 @@ public enum DurationParser {
             case "d": total += value * 86_400
             case "h": total += value * 3_600
             case "m": total += value * 60
+            case "s": total += value
             default: return nil
             }
             digits = ""
