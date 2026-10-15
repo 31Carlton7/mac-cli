@@ -111,6 +111,98 @@ public struct MailActions {
         return try await indexOnly { try await $0.contacts(matching: text, limit: limit) }
     }
 
+    // MARK: - New mail
+
+    /// Waits for a message matching `query` to arrive in `mailbox` (default:
+    /// every inbox) and returns it. With `since`, a match already received at
+    /// or after that time counts too. Relative dates in `query` and `since`
+    /// are fixed when the wait starts. Times out with `notFound`.
+    public func wait(query: String, mailbox: String?, account: String?, since: String?,
+                     timeout: String, interval: String,
+                     clock: () -> Date = Date.init,
+                     sleep: (TimeInterval) async throws -> Void = MailActions.sleep) async throws -> EmailItem {
+        let limit = try Self.duration(timeout, flag: "--timeout", range: 1...86_400)
+        let pause = try Self.duration(interval, flag: "--interval", range: 1...3_600)
+        let started = clock()
+        let filters = try MailQuery(parsing: query, now: started).terms
+        let sinceDate = try since.map { text -> Date in
+            guard let date = DateParser.parsePast(text, now: started, calendar: .current) else {
+                throw MacError(.badInput, "Cannot read --since '\(text)'. Use an ISO date (2026-10-01 14:00), yesterday, or a time ago like 5m, 2h.")
+            }
+            return date
+        }
+        let arrivals = try await startArrivals(filters, mailbox: mailbox, account: account, what: "Waiting for mail")
+        let deadline = started.addingTimeInterval(limit)
+        return try await indexOnly { _ in
+            if let sinceDate, let found = try arrivals.received(since: sinceDate) {
+                return found
+            }
+            while true {
+                if let newest = try arrivals.poll(now: clock()).last { return newest }
+                let left = deadline.timeIntervalSince(clock())
+                guard left > 0 else {
+                    throw MacError(.notFound, "No matching message arrived within \(timeout).")
+                }
+                try await sleep(min(pause, left))
+            }
+        }
+    }
+
+    /// Hands each new message matching `query` (default: every message) in
+    /// `mailbox` (default: every inbox) to `emit`, oldest first, until `count`
+    /// messages or until the task is cancelled. Cancellation ends it normally.
+    public func watch(query: String?, mailbox: String?, account: String?, interval: String,
+                      count: Int?, clock: () -> Date = Date.init,
+                      sleep: (TimeInterval) async throws -> Void = MailActions.sleep,
+                      emit: (EmailItem) -> Void) async throws {
+        let pause = try Self.duration(interval, flag: "--interval", range: 1...3_600)
+        if let count, count < 1 {
+            throw MacError(.badInput, "--count must be at least 1.")
+        }
+        let filters = try query.map { try MailQuery(parsing: $0, now: clock()).terms } ?? []
+        let arrivals = try await startArrivals(filters, mailbox: mailbox, account: account, what: "Watching for mail")
+        var emitted = 0
+        try await indexOnly { _ in
+            while !Task.isCancelled {
+                for item in try arrivals.poll(now: clock()) {
+                    emit(item)
+                    emitted += 1
+                    if emitted == count { return }
+                }
+                do {
+                    try await sleep(pause)
+                } catch is CancellationError {
+                    return
+                }
+            }
+        }
+    }
+
+    public static func sleep(_ seconds: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+
+    private func startArrivals(_ filters: [MailQuery.Term], mailbox: String?, account: String?,
+                               what: String) async throws -> MailArrivals {
+        let name = mailbox?.trimmingCharacters(in: .whitespaces)
+        if name?.isEmpty == true {
+            throw MacError(.badInput, "--mailbox cannot be empty.")
+        }
+        guard let index else { throw Self.needsIndex(what) }
+        do {
+            return try await index.arrivals(filters, mailbox: name, account: account)
+        } catch is EnvelopeIndex.Unavailable {
+            throw Self.needsIndex(what)
+        }
+    }
+
+    static func duration(_ text: String, flag: String, range: ClosedRange<TimeInterval>) throws -> TimeInterval {
+        guard let seconds = DurationParser.parse(text), range.contains(seconds) else {
+            throw MacError(.badInput, "\(flag) must be a duration like 30s, 2m or 1h, between \(Int(range.lowerBound))s and \(Int(range.upperBound / 3_600))h.")
+        }
+        return seconds
+    }
+
     /// From the index and the message's file. A message the index knows but
     /// whose file cannot be read comes from Mail.app by its numeric id; one the
     /// index does not know is not found, never a window scan.

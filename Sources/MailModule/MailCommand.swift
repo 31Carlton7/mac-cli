@@ -119,7 +119,7 @@ public struct MailCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "mail",
         abstract: "Read, triage, and compose email.",
-        subcommands: [Unread.self, Search.self, List.self, Read.self, Draft.self, Send.self,
+        subcommands: [Unread.self, Search.self, List.self, Wait.self, Watch.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
                       Archive.self, Move.self, Delete.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
     )
@@ -274,6 +274,103 @@ public struct MailCommand: AsyncParsableCommand {
                     .list(query: query, mailbox: mailbox, account: account, unread: unread,
                           flagged: flagged, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
+            }
+        }
+    }
+
+    struct Wait: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Wait for a matching message to arrive, then print it.",
+            discussion: """
+                Blocks until a message matching QUERY arrives after the wait \
+                starts, prints it and exits 0. With --since, a matching message \
+                already received at or after that time counts too. If several \
+                arrive at once, prints the newest. After --timeout with no match \
+                it exits 1 (not found).
+
+                Arrival is noticed through Mail's Envelope Index, by the order \
+                Mail stores messages in, not by the date a sender wrote, so a \
+                message with a wrong clock still counts. Mail must be running \
+                and fetching for new mail to appear. Looks in every enabled \
+                account's inbox unless --mailbox or in:MAILBOX names another. \
+                QUERY takes the operators of mac mail search; relative dates in \
+                it, like newer:2h, are fixed when the wait starts.
+
+                Examples:
+                  mac mail wait 'from:github.com subject:"verification code"' --timeout 2m --json
+                  mac mail wait 'from:billing@example.com' --since 10m --account Work
+                """
+        )
+
+        @Argument(help: "Words and operators, as for mac mail search.") var query: String
+        @Option(help: "Give up after this long, e.g. 30s, 2m, 1h (default: 2m).") var timeout = "2m"
+        @Option(help: "Time between checks (default: 2s).") var interval = "2s"
+        @Option(help: "Only this account.") var account: String?
+        @Option(help: "Mailbox path or name (default: the inbox).") var mailbox: String?
+        @Option(help: "Also accept a match received since this time, e.g. 10m, 2026-10-14 09:00.") var since: String?
+        @OptionGroup var accountCache: AccountCacheOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let item = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
+                    .wait(query: query, mailbox: mailbox, account: account, since: since,
+                          timeout: timeout, interval: interval)
+                Output.emit(item, json: output.json)
+            }
+        }
+    }
+
+    struct Watch: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Print each new matching message as it arrives.",
+            discussion: """
+                Prints every message matching QUERY that arrives after the \
+                watch starts, oldest first, one per line: a JSON object per \
+                line with --json, a summary line otherwise. Each message is \
+                printed once. Runs until interrupted (Ctrl-C or SIGTERM, exit \
+                0) or until --count messages have been printed.
+
+                Without QUERY every arriving message matches. Scope, operators \
+                and arrival detection are those of mac mail wait.
+
+                Examples:
+                  mac mail watch --json
+                  mac mail watch 'is:unread -category:promotions' --account Work
+                  mac mail watch 'in:drafts' --count 1 --json
+                """
+        )
+
+        @Argument(help: "Words and operators, as for mac mail search.") var query: String?
+        @Option(help: "Time between checks (default: 5s).") var interval = "5s"
+        @Option(help: "Only this account.") var account: String?
+        @Option(help: "Mailbox path or name (default: the inbox).") var mailbox: String?
+        @Option(help: "Exit after printing this many messages.") var count: Int?
+        @OptionGroup var accountCache: AccountCacheOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let json = output.json
+                let index = accountCache.index
+                let watching = Task {
+                    try await MailActions(store: AppleScriptMailStore(), index: index)
+                        .watch(query: query, mailbox: mailbox, account: account, interval: interval,
+                               count: count) { item in
+                            print(Output.render(item, json: json))
+                            // Piped stdout is block-buffered; a consumer needs each line now.
+                            fflush(stdout)
+                        }
+                }
+                let signals = [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
+                    signal(number, SIG_IGN)
+                    let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+                    source.setEventHandler { watching.cancel() }
+                    source.resume()
+                    return source
+                }
+                defer { signals.forEach { $0.cancel() } }
+                try await watching.value
             }
         }
     }

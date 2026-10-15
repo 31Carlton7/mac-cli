@@ -51,4 +51,10 @@ final class MailAccountRefreshTests: XCTestCase {
         XCTAssertFalse(senders.isEmpty)
         XCTAssertEqual(mail.calls, 2)
     }
+
+    func testWaitAccountAsksMail() async throws {
+        let arrivals = try await staleStore().arrivals([], mailbox: nil, account: "work")
+        XCTAssertEqual(arrivals.query.accountNames, ["Work"])
+        XCTAssertEqual(mail.calls, 2)
+    }
 }

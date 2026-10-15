@@ -98,6 +98,8 @@ public final class EnvelopeIndex {
     /// Categories, priority and summaries arrived with Apple Intelligence; an
     /// index without them still answers every other read.
     private var hasOnDeviceData = false
+    /// Device and inode of the file `db` opened, to notice Mail replacing it.
+    private var openedFile: (device: dev_t, inode: ino_t)?
 
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -164,6 +166,23 @@ public final class EnvelopeIndex {
 
     /// Opens the index and checks its layout. Throws `Unavailable`.
     public func ensureReadable() throws {
+        _ = try connection()
+    }
+
+    /// For a reader that keeps the index open: an open file stays readable
+    /// after Full Disk Access is revoked or the file is replaced, so look at
+    /// the path again. Reopens a replaced file; throws `Unavailable` once the
+    /// path can no longer be read.
+    public func ensureCurrent() throws {
+        guard case .success(let path) = location else { return try ensureReadable() }
+        var info = stat()
+        guard stat(path, &info) == 0 else {
+            close()
+            throw Unavailable(error: Self.openError(path: path))
+        }
+        if let openedFile, openedFile != (info.st_dev, info.st_ino) {
+            close()
+        }
         _ = try connection()
     }
 
@@ -253,12 +272,24 @@ public final class EnvelopeIndex {
 
     /// Messages of these mailboxes matching `query`, newest first. Gmail label
     /// mailboxes add no rows, so passing All Mail covers every label.
+    /// With `after`, only rows with a higher ROWID, oldest first: arrival order.
     public func search(_ query: MailQuerySQL, mailboxes: [IndexMailbox], inboxes: [IndexMailbox],
-                       limit: Int) throws -> [IndexedMessage] {
+                       limit: Int?, after rowID: Int64? = nil) throws -> [IndexedMessage] {
         guard !mailboxes.isEmpty else { return [] }
-        return try messages(where: "m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND (\(query.sql))",
+        let arrived = rowID.map { "m.ROWID > \($0) AND " } ?? ""
+        return try messages(where: "\(arrived)m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND (\(query.sql))",
                             inboxIDs: Self.list(inboxes.map(\.rowID)), limit: limit,
-                            bindings: query.bindings)
+                            bindings: query.bindings, arrivalOrder: rowID != nil)
+    }
+
+    /// The highest message ROWID. Mail gives each new row a higher one.
+    public func newestRowID() throws -> Int64 {
+        let db = try connection()
+        let stmt = try prepare(db, "SELECT ifnull(max(ROWID), 0) FROM messages;")
+        defer { sqlite3_finalize(stmt) }
+        var top: Int64 = 0
+        try forEachRow(db, stmt) { top = sqlite3_column_int64($0, 0) }
+        return top
     }
 
     /// Every live row carrying this Message-ID (brackets optional), in every
@@ -419,9 +450,11 @@ public final class EnvelopeIndex {
 
     /// Runs one message query; `bindings` fill the `?` placeholders in
     /// `condition`, in order. With `collapseCopies`, rows sharing a Message-ID
-    /// collapse to the inbox row, then the newest.
+    /// collapse to the inbox row, then the newest. Results are newest first,
+    /// or by ascending ROWID with `arrivalOrder`.
     private func messages(where condition: String, inboxIDs: String, limit: Int?,
-                          bindings: [MailQuerySQL.Binding] = [], collapseCopies: Bool = true) throws -> [IndexedMessage] {
+                          bindings: [MailQuerySQL.Binding] = [], collapseCopies: Bool = true,
+                          arrivalOrder: Bool = false) throws -> [IndexedMessage] {
         let db = try connection()
         let inInbox = inboxIDs.isEmpty ? "0" : """
         (m.mailbox IN (\(inboxIDs)) OR EXISTS (SELECT 1 FROM labels l WHERE l.message_id = m.ROWID AND l.mailbox_id IN (\(inboxIDs))))
@@ -454,7 +487,7 @@ public final class EnvelopeIndex {
         LEFT JOIN addresses a ON a.ROWID = m.sender
         \(summaries)
         \(keep)
-        ORDER BY p.received DESC, p.id DESC
+        ORDER BY \(arrivalOrder ? "p.id" : "p.received DESC, p.id DESC")
         LIMIT ?;
         """
         let stmt = try prepare(db, sql)
@@ -557,8 +590,16 @@ public final class EnvelopeIndex {
         var onDevice: OpaquePointer?
         hasOnDeviceData = sqlite3_prepare_v2(handle, Self.onDeviceProbe, -1, &onDevice, nil) == SQLITE_OK
         sqlite3_finalize(onDevice)
+        var info = stat()
+        openedFile = stat(path, &info) == 0 ? (info.st_dev, info.st_ino) : nil
         db = handle
         return handle
+    }
+
+    private func close() {
+        sqlite3_close(db)
+        db = nil
+        openedFile = nil
     }
 
     private static func openError(path: String) -> MacError {

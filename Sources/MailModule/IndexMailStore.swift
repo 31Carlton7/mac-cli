@@ -100,15 +100,40 @@ public struct IndexMailStore {
                      limit: Int) async throws -> [EmailItem] {
         try index.ensureReadable()
         let all = try await directory.accounts(knowing: (account.map { [$0] } ?? []) + MailQuery(terms: filters).accountNames)
+        let terms = filters + (try scopeTerms(mailbox: mailbox, account: account, accounts: all))
+        return try search(MailQuery(terms: terms), accounts: all, limit: limit)
+    }
+
+    /// Starts noticing mail that arrives from now on, for `wait` and `watch`.
+    /// The scope is `list`'s: `mailbox` (default: every inbox, unless the
+    /// filters name one with `in:`) in `account` or every enabled account.
+    /// This is the only Mail.app call; polling reads the index alone.
+    public func arrivals(_ filters: [MailQuery.Term], mailbox: String?,
+                         account: String?) async throws -> MailArrivals {
+        try index.ensureReadable()
+        let all = try await directory.accounts(knowing: (account.map { [$0] } ?? []) + MailQuery(terms: filters).accountNames)
+        let name = mailbox ?? (MailQuery(terms: filters).namesMailbox ? nil : "inbox")
+        let terms = filters + (try scopeTerms(mailbox: name, account: account, accounts: all))
+        return MailArrivals(store: self, query: MailQuery(terms: terms), accounts: all,
+                            start: try index.newestRowID())
+    }
+
+    /// The terms `--mailbox` and `--account` add. A mailbox name that picks
+    /// no mailbox in that scope is `notFound`, not an empty result.
+    private func scopeTerms(mailbox: String?, account: String?,
+                            accounts all: [MailAccount]) throws -> [MailQuery.Term] {
         let scope = try account.map { [try MailAccountDirectory.account(named: $0, in: all)] }
             ?? all.filter(\.isEnabled)
-        if try index.mailboxes(named: mailbox, accountIDs: scope.map(\.id)).isEmpty {
-            let place = account == nil ? "any enabled account" : scope[0].name
-            throw MacError(.notFound, "No mailbox '\(mailbox)' in \(place). Run: mac mail mailboxes")
+        var terms: [MailQuery.Term] = []
+        if let mailbox {
+            if try index.mailboxes(named: mailbox, accountIDs: scope.map(\.id)).isEmpty {
+                let place = account == nil ? "any enabled account" : scope[0].name
+                throw MacError(.notFound, "No mailbox '\(mailbox)' in \(place). Run: mac mail mailboxes")
+            }
+            terms.append(MailQuery.Term(.mailbox(mailbox)))
         }
-        var terms = filters + [MailQuery.Term(.mailbox(mailbox))]
         if account != nil { terms.append(MailQuery.Term(.account(scope[0].name))) }
-        return try search(MailQuery(terms: terms), accounts: all, limit: limit)
+        return terms
     }
 
     /// Every mailbox of `account`, or of every enabled account, with its
@@ -132,6 +157,13 @@ public struct IndexMailStore {
     }
 
     private func search(_ query: MailQuery, accounts all: [MailAccount], limit: Int) throws -> [EmailItem] {
+        Self.items(try matches(query, accounts: all, limit: limit), accounts: all)
+    }
+
+    /// The rows `search` reads. With `after`, only rows with a higher ROWID,
+    /// in arrival order.
+    func matches(_ query: MailQuery, accounts all: [MailAccount], limit: Int?,
+                 after rowID: Int64? = nil) throws -> [IndexedMessage] {
         let named = Set(query.accountNames.map { $0.lowercased() })
         let accounts = all.filter { $0.isEnabled || named.contains($0.name.lowercased()) }
         let accountIDs = Dictionary(all.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
@@ -140,9 +172,8 @@ public struct IndexMailStore {
         let mailboxes = try index.mailboxes(accountIDs: ids)
             .filter { query.namesMailbox || !$0.isTrashOrJunk }
         let inboxes = try index.inboxes(accountIDs: ids)
-        let messages = try index.search(clause, mailboxes: mailboxes,
-                                        inboxes: Array(inboxes.values), limit: limit)
-        return Self.items(messages, accounts: accounts)
+        return try index.search(clause, mailboxes: mailboxes, inboxes: Array(inboxes.values),
+                                limit: limit, after: rowID)
     }
 
     /// One message with its body, decoded from its file. A message copied

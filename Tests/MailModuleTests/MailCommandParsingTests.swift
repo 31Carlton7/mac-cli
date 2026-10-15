@@ -23,6 +23,13 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertTrue(contacts.accountCache.noCache)
     }
 
+    func testWaitAndWatchTakeNoCache() throws {
+        let wait = try XCTUnwrap(MailCommand.parseAsRoot(["wait", "from:x", "--no-cache"]) as? MailCommand.Wait)
+        XCTAssertTrue(wait.accountCache.noCache)
+        let watch = try XCTUnwrap(MailCommand.parseAsRoot(["watch", "--no-cache"]) as? MailCommand.Watch)
+        XCTAssertTrue(watch.accountCache.noCache)
+    }
+
     func testReadPathsAcceptScan() {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["unread", "--scan", "100"]))
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["search", "invoice", "--scan", "100"]))
@@ -44,6 +51,26 @@ final class MailCommandParsingTests: XCTestCase {
         let bare = try XCTUnwrap(MailCommand.parseAsRoot(["list"]) as? MailCommand.List)
         XCTAssertNil(bare.query)
         XCTAssertNil(bare.mailbox)
+    }
+
+    func testWaitAndWatchParse() throws {
+        let wait = try XCTUnwrap(MailCommand.parseAsRoot([
+            "wait", "from:github.com subject:\"verification code\"", "--timeout", "5m", "--interval", "3s",
+            "--account", "Work", "--mailbox", "Receipts", "--since", "10m", "--json",
+        ]) as? MailCommand.Wait)
+        XCTAssertEqual(wait.query, "from:github.com subject:\"verification code\"")
+        XCTAssertEqual([wait.timeout, wait.interval, wait.since], ["5m", "3s", "10m"])
+        let bareWait = try XCTUnwrap(MailCommand.parseAsRoot(["wait", "code"]) as? MailCommand.Wait)
+        XCTAssertEqual([bareWait.timeout, bareWait.interval], ["2m", "2s"])
+        XCTAssertThrowsError(try MailCommand.parseAsRoot(["wait"]))
+
+        let watch = try XCTUnwrap(MailCommand.parseAsRoot(["watch", "in:drafts", "--count", "1", "--json"])
+            as? MailCommand.Watch)
+        XCTAssertEqual(watch.query, "in:drafts")
+        XCTAssertEqual(watch.count, 1)
+        let bareWatch = try XCTUnwrap(MailCommand.parseAsRoot(["watch"]) as? MailCommand.Watch)
+        XCTAssertNil(bareWatch.query)
+        XCTAssertEqual(bareWatch.interval, "5s")
     }
 
     func testMailboxesListsByDefault() throws {

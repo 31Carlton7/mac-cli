@@ -84,6 +84,12 @@ rm -f "${TMPDIR:-/tmp}/mac-cli-smoke.txt"
 echo "   (a draft window opened in Mail — close it whenever)"
 "$MAC" mail list --limit 3 >/dev/null
 "$MAC" mail list 'subject:mac-cli-smoke-should-match-nothing' --mailbox sent --unread --json | grep -q '\[\]'
+WAIT_STATUS=0
+"$MAC" mail wait 'subject:mac-cli-smoke-should-match-nothing' --timeout 2s --json 2>/dev/null || WAIT_STATUS=$?
+if [ "$WAIT_STATUS" -ne 1 ]; then
+  echo "smoke: mail wait did not time out with exit 1 (got $WAIT_STATUS)" >&2
+  exit 1
+fi
 "$MAC" mail mailboxes --json | /usr/bin/python3 -c 'import json, sys; rows = json.load(sys.stdin); assert rows and sorted(rows[0]) == ["account", "path", "total", "unread"], rows[:1]'
 if "$MAC" mail list --mailbox "mac-cli-smoke-no-such-mailbox" >/dev/null 2>&1; then
   echo "smoke: list of an unknown mailbox did not fail" >&2
