@@ -385,6 +385,25 @@ final class MailActionsTests: XCTestCase {
         } catch { XCTFail("wrong error type") }
     }
 
+    func testComposeRejectsRecipientsItCannotRead() async {
+        for (to, cc) in [(#""Doe, John <j@x.com>"#, nil), ("a@b.com, Doe", nil), ("a@b.com", Optional("Ann <c@d.com"))] {
+            do {
+                try await actions.compose(to: to, cc: cc, subject: "s", body: "b", send: true)
+                XCTFail("expected badInput for \(to) \(cc ?? "")")
+            } catch let error as MacError {
+                XCTAssertEqual(error.code, .badInput)
+                XCTAssertTrue(error.message.contains(cc == nil ? "--to" : "--cc"), error.message)
+            } catch { XCTFail("wrong error type") }
+        }
+        XCTAssertTrue(store.sent.isEmpty)
+        XCTAssertTrue(store.drafted.isEmpty)
+    }
+
+    func testComposeAcceptsQuotedDisplayNames() async throws {
+        try await actions.compose(to: #""Doe, John" <j@x.com>"#, cc: "Ann Lee <a@b.com>", subject: "s", body: "b", send: false)
+        XCTAssertEqual(store.drafted.count, 1)
+    }
+
     func testComposeRequiresSubjectOrBody() async {
         do {
             try await actions.compose(to: "a@b.com", cc: nil, subject: "", body: "  ", send: false)
@@ -400,6 +419,63 @@ final class MailActionsTests: XCTestCase {
         XCTAssertEqual(store.drafted.count, 1)
         XCTAssertEqual(store.sent.count, 1)
         XCTAssertEqual(store.sent[0].cc, "c@d.com")
+    }
+
+    func testComposeRejectsBadAttachmentsBeforeTouchingMail() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-attach-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unreadable = directory.appendingPathComponent("locked.txt")
+        try Data("x".utf8).write(to: unreadable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: unreadable.path)
+
+        let cases = [
+            (directory.appendingPathComponent("missing.pdf").path, "no file at"),
+            (directory.path, "is a directory"),
+            (unreadable.path, "is not readable"),
+        ]
+        for (path, reason) in cases {
+            do {
+                try await actions.compose(to: "a@b.com", cc: nil, subject: "s", body: "b",
+                                          attachments: [path], send: true)
+                XCTFail("expected badInput for \(reason)")
+            } catch let error as MacError {
+                XCTAssertEqual(error.code, .badInput)
+                XCTAssertTrue(error.message.contains(reason), error.message)
+            }
+        }
+        XCTAssertTrue(store.sent.isEmpty)
+        XCTAssertTrue(store.drafted.isEmpty)
+    }
+
+    func testComposePassesHTMLAndAbsoluteAttachmentPaths() async throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-attach-\(UUID().uuidString).txt")
+        try Data("x".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try await actions.compose(to: "a@b.com", cc: nil, subject: "", body: "", html: "<p>x</p>",
+                                  attachments: [file.path], send: false)
+        XCTAssertEqual(store.drafted.first?.html, "<p>x</p>")
+        XCTAssertEqual(store.drafted.first?.attachments, [file.standardizedFileURL.path])
+    }
+
+    func testComposeAcceptsAnAttachmentAsTheOnlyContent() async throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-attach-\(UUID().uuidString).txt")
+        try Data("x".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try await actions.compose(to: "a@b.com", cc: nil, subject: "", body: "",
+                                  attachments: [file.path], send: false)
+        XCTAssertEqual(store.drafted.count, 1)
+    }
+
+    func testComposeDryRunNeverReachesTheStore() async throws {
+        store.accessGranted = false
+        let draft = try await actions.compose(to: " a@b.com ", cc: nil, subject: "s", body: "",
+                                              html: "<p>x</p>", send: true, dryRun: true)
+        XCTAssertEqual(draft.to, "a@b.com")
+        XCTAssertTrue(store.sent.isEmpty)
     }
 
     func testPermissionDeniedPropagates() async {

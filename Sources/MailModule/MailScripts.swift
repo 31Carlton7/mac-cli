@@ -391,19 +391,73 @@ enum MailScripts {
         return out
     }
 
+    /// With HTML, the message starts empty and `html content` fills it. That
+    /// property is missing from Mail's dictionary but works on Mail 16; it
+    /// replaces anything already in the body, so it must be set before files
+    /// are attached or they are dropped. Mail generates the `text/plain`
+    /// alternative itself when it sends.
+    ///
+    /// A send reads the recipients back first and sends only when they are
+    /// exactly the ones asked for. It returns `sent` once Mail's `send`
+    /// succeeds, `UNSENT FS to FS cc` (comma-joined, as Mail has them) on a
+    /// mismatch, and `failed` when `send` does; both leave the message open
+    /// in Mail as a draft.
     static func compose(_ draft: MailDraft, send: Bool) -> String {
-        let cc = draft.cc.map {
-            "    tell msg to make new cc recipient with properties {address:\"\(AppleScript.escape($0))\"}"
-        } ?? ""
-        let finish = send ? "send msg" : "activate"
-        return """
+        let to = MailRecipient.list(draft.to)
+        let cc = MailRecipient.list(draft.cc)
+        func make(_ kind: String, _ recipient: MailRecipient) -> String {
+            let name = recipient.name.map { "name:\"\(AppleScript.escape($0))\", " } ?? ""
+            return "    tell msg to make new \(kind) recipient with properties {\(name)address:\"\(AppleScript.escape(recipient.address))\"}"
+        }
+        let made = to.map { make("to", $0) } + cc.map { make("cc", $0) }
+        let body = draft.html == nil ? ", content:\"\(AppleScript.escape(draft.body))\"" : ""
+        let html = draft.html.map { "    set html content of msg to \"\(AppleScript.escape($0))\"" } ?? ""
+        let attachments = draft.attachments.map {
+            "    tell msg to make new attachment with properties {file name:(POSIX file \"\(AppleScript.escape($0))\")} at after the last paragraph of content"
+        }.joined(separator: "\n")
+        let header = """
         tell application "Mail"
-            set msg to make new outgoing message with properties {subject:"\(AppleScript.escape(draft.subject))", content:"\(AppleScript.escape(draft.body))", visible:\(send ? "false" : "true")}
-            tell msg to make new to recipient with properties {address:"\(AppleScript.escape(draft.to))"}
-        \(cc)
-            \(finish)
+            set msg to make new outgoing message with properties {subject:"\(AppleScript.escape(draft.subject))"\(body), visible:\(send ? "false" : "true")}
+        \(made.joined(separator: "\n"))
+        \(html)
+        \(attachments)
+        """
+        guard send else {
+            return """
+            \(header)
+                activate
+            end tell
+            return "ok"
+            """
+        }
+        func list(_ addresses: [String]) -> String {
+            "{" + addresses.map { "\"\(AppleScript.escape($0))\"" }.joined(separator: ", ") + "}"
+        }
+        // Give Mail a moment to load the files before the hidden message is sent.
+        let settle = draft.attachments.isEmpty ? "" : "    delay 1"
+        return """
+        set FS to character id 31
+        \(header)
+            set toList to {}
+            repeat with r in to recipients of msg
+                copy ((address of r) as text) to end of toList
+            end repeat
+            set ccList to {}
+            repeat with r in cc recipients of msg
+                copy ((address of r) as text) to end of ccList
+            end repeat
+            if toList is not \(list(to.map(\.address))) or ccList is not \(list(cc.map(\.address))) then
+                set visible of msg to true
+                activate
+                set AppleScript's text item delimiters to ", "
+                return "UNSENT" & FS & (toList as text) & FS & (ccList as text)
+            end if
+        \(settle)
+            if (send msg) then return "sent"
+            set visible of msg to true
+            activate
         end tell
-        return "ok"
+        return "failed"
         """
     }
 }

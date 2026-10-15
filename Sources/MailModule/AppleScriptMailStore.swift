@@ -74,7 +74,19 @@ public final class AppleScriptMailStore: MailStore {
     }
 
     public func send(_ draft: MailDraft) async throws {
-        _ = try await AppleScript.run(MailScripts.compose(draft, send: true), targetName: "Mail")
+        try Self.sent(try await AppleScript.run(MailScripts.compose(draft, send: true), targetName: "Mail"))
+    }
+
+    /// Throws unless `compose` reports Mail sent the message.
+    static func sent(_ out: String) throws {
+        guard out != "sent" else { return }
+        let fields = AppleScript.parseRecords(out).first ?? []
+        if fields.first == "UNSENT" {
+            let to = fields.count > 1 && !fields[1].isEmpty ? fields[1] : "nobody"
+            let cc = fields.count > 2 && !fields[2].isEmpty ? " and Cc \(fields[2])" : ""
+            throw MacError(.badInput, "Not sent. Mail's message has To \(to)\(cc), not the recipients asked for. It is open in Mail as a draft.")
+        }
+        throw MacError(.badInput, "Mail did not send the message. It is open in Mail as a draft.")
     }
 
     static func emails(from output: String, bodyField: Bool = false) -> [EmailItem] {

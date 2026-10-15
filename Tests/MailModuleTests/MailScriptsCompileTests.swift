@@ -42,4 +42,16 @@ final class MailScriptsCompileTests: XCTestCase {
             assertCompiles(MailScripts.deleteMailbox(account: name, path: path), "deleteMailbox \(name)")
         }
     }
+
+    func testComposeScriptsCompile() {
+        for name in hostileNames {
+            let draft = MailDraft(to: name + "@example.com, \(name) <b@example.com>, \"\(name), Jr\" <c@example.com>", cc: name, subject: name,
+                                  body: name, attachments: ["/tmp/" + name])
+            let html = MailDraft(to: "a@example.com", cc: nil, subject: name, body: "", html: "<p>\(name)</p>")
+            for send in [false, true] {
+                assertCompiles(MailScripts.compose(draft, send: send), "compose send:\(send) \(name)")
+                assertCompiles(MailScripts.compose(html, send: send), "compose html send:\(send) \(name)")
+            }
+        }
+    }
 }

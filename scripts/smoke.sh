@@ -68,6 +68,12 @@ for verb in archive delete flag; do
   fi
 done
 "$MAC" mail draft --to "smoke@example.com" --subject "mac-cli smoke draft — safe to close" --body "Created by scripts/smoke.sh; close this window." --quiet
+printf 'smoke attachment\n' > "${TMPDIR:-/tmp}/mac-cli-smoke.txt"
+"$MAC" mail send --to "smoke@example.com" --markdown "**smoke**" --attach "${TMPDIR:-/tmp}/mac-cli-smoke.txt" --dry-run --json | json_field html | grep -q "<strong>smoke</strong>"
+if "$MAC" mail draft --to "smoke@example.com" --subject "x" --attach /nonexistent/mac-cli-smoke.pdf --quiet 2>/dev/null; then
+  echo "smoke: a missing attachment was accepted" >&2; exit 1
+fi
+rm -f "${TMPDIR:-/tmp}/mac-cli-smoke.txt"
 echo "   (a draft window opened in Mail — close it whenever)"
 "$MAC" mail list --limit 3 >/dev/null
 "$MAC" mail list 'subject:mac-cli-smoke-should-match-nothing' --mailbox sent --unread --json | grep -q '\[\]'

@@ -43,6 +43,7 @@ mac mail archive <id> <id> --dry-run
 mac mail flag <id>
 mac mail move <id> --to Projects --dry-run
 mac mail draft --to a@b.com --subject "Hi" --body "..."
+mac mail draft --to a@b.com --subject "Notes" --markdown-file notes.md --attach report.pdf
 mac mail mailboxes create 2026 --parent Projects --account Work --dry-run
 mac mail mailboxes delete Projects/2026 --account Work
 mac messages history +15551234567
@@ -87,6 +88,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `mac mail mark-read`, `mark-unread`, `flag`, `unflag`, `archive`, `move --to` and `delete` take several ids and `--dry-run`, which prints the resolved messages without changing anything. They print `{"results":[{"id","account","mailbox","status","verified"}]}` (`status` is `ok`, `notFound`, `failed` or `dryRun`; `verified` means Mail's index showed the change) and exit 1 if any id was not changed. A message with copies in several mailboxes is refused until `--mailbox` or `--account` picks one.
 - Mail message ids are the RFC Message-ID without angle brackets. Items read from Mail's Envelope Index also carry `mailbox`, `to`, `cc`, `isFlagged` and `hasAttachments`, and `mac mail read` adds `attachments` (`name`, `mimeType`, `size`, `isExternal`) when it decoded the message file; a key appears only when its value is known.
 - Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
+- `mac mail draft`/`send` take one body: `--body`, `--html` or `--markdown`, or a `-file` variant of each. `--attach` repeats. `--dry-run` prints what would be composed without opening Mail; attachments are checked before Mail is touched.
 - `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
 - `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
 - `mac shortcuts run` is the escape hatch for unscriptable apps: wrap the task in a Shortcut and run it by name or id.
@@ -111,8 +113,9 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **Without the index, Mail reads are windowed.** When the index is unreadable, `unread`, `search`, `read`, `mark-read`, `archive` and an inbox `list` with plain words or `--unread` fall back to Mail.app with a warning (any other `list`, and `mailboxes`, is permission denied naming `mac doctor`), and each examines only the newest `--scan` messages (default 30) of each account's inbox. A message older than that window is invisible — raise `--scan` (max 500) to look further back. In this mode `unread` without `--account` is a fast sample, not a global newest-N, and search matches plain words against subject/sender only; operators need the index. AppleScript's `whose` filtering, which would search the whole mailbox, is unusable: on a 97k-message unified inbox it pins Mail.app at 98% CPU indefinitely.
 - **Windowed reads on large mailboxes are slow.** Cost scales with messages touched: roughly 0.15s/message on a 1.7k-message account and ~1.5s/message on a 50k-message one. Keep `--scan` small on big accounts.
 - Mail search has no body search.
-- Mail composition is plain-text; no attachments.
 - **Mailbox system names are matched by name.** `mac mail mailboxes delete`/`rename` recognise system mailboxes from a fixed list of English, German, French and Spanish names and Gmail's `[Gmail]/` folders; a provider that names its system folders differently is not protected by that check (the empty-mailbox check still applies to delete).
+- **HTML mail's plain-text part is Mail's own.** `--html` and `--markdown` set Mail's undocumented `html content` property, the one scripted route to an HTML body that worked in testing. Mail wraps the HTML in a quote block, so the plain-text alternative it generates at send time prefixes every line with `> `, and a saved draft's plain-text part stays empty until it is sent.
+- Markdown covers headings, paragraphs, one level of lists, quotes, fenced code, rules, inline code, emphasis, and http/https/mailto links. Raw HTML in Markdown is shown as text.
 - Messages: group chats are read-only.
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.
 - `mac messages send` requires an exact handle — it does no normalization.

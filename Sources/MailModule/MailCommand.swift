@@ -3,10 +3,89 @@ import Core
 import Foundation
 
 struct ComposeOptions: ParsableArguments {
-    @Option(help: "Recipient email address.") var to: String
-    @Option(help: "CC email address.") var cc: String?
+    @Option(help: #"Recipient addresses, comma-separated. A name is kept: Ann <a@example.com>, "Doe, John" <j@example.com>."#) var to: String
+    @Option(help: "CC addresses, written like --to.") var cc: String?
     @Option(help: "Subject line.") var subject: String = ""
-    @Option(help: "Plain-text body.") var body: String = ""
+    @Option(help: "Plain-text body.") var body: String?
+    @Option(help: "Read the plain-text body from a UTF-8 file.") var bodyFile: String?
+    @Option(help: "HTML body.") var html: String?
+    @Option(help: "Read the HTML body from a UTF-8 file.") var htmlFile: String?
+    @Option(help: "Markdown body, sent as HTML.") var markdown: String?
+    @Option(help: "Read the Markdown body from a UTF-8 file.") var markdownFile: String?
+    @Option(help: "Attach a file. Repeat for several.") var attach: [String] = []
+    @Flag(help: "Print what would be composed without opening Mail.") var dryRun = false
+
+    /// The plain-text body and, for HTML or Markdown, the HTML that replaces it.
+    func resolvedBody() throws -> (text: String, html: String?) {
+        let given = [("--body", body), ("--body-file", bodyFile), ("--html", html),
+                     ("--html-file", htmlFile), ("--markdown", markdown),
+                     ("--markdown-file", markdownFile)].filter { $0.1 != nil }
+        guard given.count <= 1 else {
+            throw MacError(.badInput, "Use only one of \(given.map(\.0).joined(separator: ", ")).")
+        }
+        if let body { return (body, nil) }
+        if let bodyFile { return (try Self.readText(bodyFile, option: "--body-file"), nil) }
+        if let html { return ("", html) }
+        if let htmlFile { return ("", try Self.readText(htmlFile, option: "--html-file")) }
+        if let markdown { return ("", Markdown.html(markdown)) }
+        if let markdownFile {
+            return ("", Markdown.html(try Self.readText(markdownFile, option: "--markdown-file")))
+        }
+        return ("", nil)
+    }
+
+    static func readText(_ path: String, option: String) throws -> String {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        guard let data = FileManager.default.contents(atPath: url.path) else {
+            throw MacError(.badInput, "\(option): cannot read '\(path)'.")
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw MacError(.badInput, "\(option): '\(path)' is not UTF-8 text.")
+        }
+        return text
+    }
+
+    func compose(send: Bool) async throws -> MailDraft {
+        let (text, html) = try resolvedBody()
+        return try await MailActions(store: AppleScriptMailStore())
+            .compose(to: to, cc: cc, subject: subject, body: text, html: html,
+                     attachments: attach, send: send, dryRun: dryRun)
+    }
+}
+
+/// What `draft --dry-run` and `send --dry-run` print: the validated message,
+/// with attachments as absolute paths.
+struct ComposePreview: Codable, HumanRenderable {
+    let action: String
+    let to: String
+    let cc: String?
+    let subject: String
+    let body: String?
+    let html: String?
+    let attachments: [String]
+
+    init(_ draft: MailDraft, send: Bool) {
+        action = send ? "send" : "draft"
+        to = draft.to
+        cc = draft.cc
+        subject = draft.subject
+        body = draft.html == nil ? draft.body : nil
+        html = draft.html
+        attachments = draft.attachments
+    }
+
+    var humanLine: String {
+        var lines = ["would \(action) to \(to)"]
+        if let cc { lines.append("cc: \(cc)") }
+        lines.append("subject: \(subject)")
+        lines += attachments.map { "attach: \($0)" }
+        if let html {
+            lines += ["html:", html]
+        } else if let body, !body.isEmpty {
+            lines += ["body:", body]
+        }
+        return lines.joined(separator: "\n")
+    }
 }
 
 struct AccountCacheOptions: ParsableArguments {
@@ -234,7 +313,18 @@ public struct MailCommand: AsyncParsableCommand {
     struct Draft: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Compose a draft in Mail.app for you to review — does NOT send.",
-            discussion: "Example:\n  mac mail draft --to a@b.com --subject \"Hi\" --body \"...\"\nAgents: prefer draft over send unless the user explicitly asked to send."
+            discussion: """
+                Give the body as plain text (--body, --body-file), HTML (--html, \
+                --html-file) or Markdown (--markdown, --markdown-file), at most one. \
+                Markdown is converted to HTML locally. Attachments are checked before \
+                Mail is opened.
+
+                Examples:
+                  mac mail draft --to a@b.com --subject "Hi" --body "..."
+                  mac mail draft --to a@b.com --subject "Notes" --markdown-file notes.md --attach report.pdf
+                  mac mail draft --to a@b.com --subject "Hi" --html "<p>Hi</p>" --dry-run
+                Agents: prefer draft over send unless the user explicitly asked to send.
+                """
         )
 
         @OptionGroup var compose: ComposeOptions
@@ -242,9 +332,11 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore())
-                    .compose(to: compose.to, cc: compose.cc, subject: compose.subject,
-                             body: compose.body, send: false)
+                let draft = try await compose.compose(send: false)
+                if compose.dryRun {
+                    Output.emit(ComposePreview(draft, send: false), json: output.json)
+                    return
+                }
                 // Both envelopes are fixed text with no user-supplied value, so
                 // there is nothing for emitConfirmation to escape here.
                 if output.json {
@@ -259,7 +351,17 @@ public struct MailCommand: AsyncParsableCommand {
     struct Send: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Compose and send an email immediately.",
-            discussion: "Example:\n  mac mail send --to a@b.com --subject \"Hi\" --body \"...\""
+            discussion: """
+                Takes the same body and --attach options as draft. Run with \
+                --dry-run first to check what will go out. Mail's message is \
+                read back first and sent only with exactly the recipients \
+                given; otherwise, or when Mail does not send it, it is left \
+                open as a draft and the command exits 1.
+
+                Examples:
+                  mac mail send --to a@b.com --subject "Hi" --body "..."
+                  mac mail send --to a@b.com --subject "Report" --markdown "**Done.**" --attach report.pdf
+                """
         )
 
         @OptionGroup var compose: ComposeOptions
@@ -267,9 +369,11 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore())
-                    .compose(to: compose.to, cc: compose.cc, subject: compose.subject,
-                             body: compose.body, send: true)
+                let draft = try await compose.compose(send: true)
+                if compose.dryRun {
+                    Output.emit(ComposePreview(draft, send: true), json: output.json)
+                    return
+                }
                 Output.emitConfirmation(key: "sent", value: compose.to, human: "sent to",
                                         json: output.json, quiet: output.quiet)
             }

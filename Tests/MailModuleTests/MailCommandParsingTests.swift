@@ -1,4 +1,5 @@
 import XCTest
+import Core
 @testable import MailModule
 
 final class MailCommandParsingTests: XCTestCase {
@@ -95,5 +96,79 @@ final class MailCommandParsingTests: XCTestCase {
         let move = try XCTUnwrap(try MailCommand.parseAsRoot(["move", "a@x", "--to", "Archive"]) as? MailCommand.Move)
         XCTAssertEqual(move.to, "Archive")
         XCTAssertThrowsError(try MailCommand.parseAsRoot(["move", "a@x"]), "move needs --to")
+    }
+
+    // MARK: - compose bodies
+
+    private func composeOptions(_ args: [String]) throws -> ComposeOptions {
+        let command = try MailCommand.parseAsRoot(["draft", "--to", "a@b.com"] + args)
+        return try XCTUnwrap(command as? MailCommand.Draft).compose
+    }
+
+    private func temporaryFile(_ contents: Data) throws -> String {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-compose-\(UUID().uuidString)")
+        try contents.write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url.path
+    }
+
+    func testBothCommandsParseEveryComposeOption() {
+        for verb in ["draft", "send"] {
+            XCTAssertNoThrow(try MailCommand.parseAsRoot([
+                verb, "--to", "a@b.com", "--markdown", "**x**",
+                "--attach", "a.pdf", "--attach", "b.png", "--dry-run",
+            ]))
+        }
+    }
+
+    func testAttachRepeats() throws {
+        XCTAssertEqual(try composeOptions(["--attach", "a.pdf", "--attach", "b.png"]).attach,
+                       ["a.pdf", "b.png"])
+    }
+
+    func testPlainBodyHasNoHTML() throws {
+        let body = try composeOptions(["--body", "hello"]).resolvedBody()
+        XCTAssertEqual(body.text, "hello")
+        XCTAssertNil(body.html)
+    }
+
+    func testMarkdownBecomesHTML() throws {
+        let body = try composeOptions(["--markdown", "# Hi"]).resolvedBody()
+        XCTAssertEqual(body.html, "<h1>Hi</h1>")
+        XCTAssertEqual(body.text, "")
+    }
+
+    func testBodyFilesAreRead() throws {
+        let path = try temporaryFile(Data("# From file ✓\n".utf8))
+        XCTAssertEqual(try composeOptions(["--body-file", path]).resolvedBody().text, "# From file ✓\n")
+        XCTAssertEqual(try composeOptions(["--html-file", path]).resolvedBody().html, "# From file ✓\n")
+        XCTAssertEqual(try composeOptions(["--markdown-file", path]).resolvedBody().html, "<h1>From file ✓</h1>")
+    }
+
+    func testOnlyOneBodyOptionIsAllowed() throws {
+        let options = try composeOptions(["--body", "x", "--markdown", "y"])
+        XCTAssertThrowsError(try options.resolvedBody()) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+            XCTAssertEqual((error as? MacError)?.message, "Use only one of --body, --markdown.")
+        }
+    }
+
+    func testMissingOrNonUTF8BodyFileIsBadInput() throws {
+        let missing = try composeOptions(["--html-file", "/nonexistent/mac-cli/body.html"])
+        XCTAssertThrowsError(try missing.resolvedBody()) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+        }
+        let binary = try temporaryFile(Data([0xFF, 0xFE, 0x00, 0xC3]))
+        XCTAssertThrowsError(try composeOptions(["--body-file", binary]).resolvedBody()) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+        }
+    }
+
+    func testDryRunPreviewOmitsPlainBodyForHTML() throws {
+        let draft = MailDraft(to: "a@b.com", cc: nil, subject: "s", body: "", html: "<p>x</p>",
+                              attachments: ["/tmp/a.pdf"])
+        let json = Output.render(ComposePreview(draft, send: true), json: true)
+        XCTAssertEqual(json, #"{"action":"send","attachments":["\/tmp\/a.pdf"],"html":"<p>x<\/p>","subject":"s","to":"a@b.com"}"#)
     }
 }

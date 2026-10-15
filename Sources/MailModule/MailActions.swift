@@ -201,23 +201,54 @@ public struct MailActions {
         return results
     }
 
+    /// Validates everything up front, so a bad address or attachment fails
+    /// before Mail.app is touched.
+    @discardableResult
     public func compose(to: String, cc: String?, subject: String, body: String,
-                        send: Bool) async throws {
+                        html: String? = nil, attachments: [String] = [],
+                        send: Bool, dryRun: Bool = false) async throws -> MailDraft {
         let recipient = to.trimmingCharacters(in: .whitespaces)
-        guard recipient.contains("@"), recipient.count >= 3 else {
+        for (option, field) in [("--to", recipient), ("--cc", cc ?? "")] {
+            if let bad = MailRecipient.list(field).first(where: { !$0.hasValidAddress }) {
+                throw MacError(.badInput, "\(option) must be email addresses, got '\(bad.address)'.")
+            }
+        }
+        guard !MailRecipient.list(recipient).isEmpty else {
             throw MacError(.badInput, "--to must be an email address, got '\(to)'.")
         }
         let hasContent = !subject.trimmingCharacters(in: .whitespaces).isEmpty
             || !body.trimmingCharacters(in: .whitespaces).isEmpty
+            || !(html ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachments.isEmpty
         guard hasContent else {
-            throw MacError(.badInput, "Provide at least one of --subject or --body.")
+            throw MacError(.badInput, "Provide at least one of --subject, a body, or --attach.")
         }
-        let draft = MailDraft(to: recipient, cc: cc, subject: subject, body: body)
+        let draft = MailDraft(to: recipient, cc: cc, subject: subject, body: body, html: html,
+                              attachments: try attachments.map(Self.attachmentPath))
+        if dryRun { return draft }
         if send {
             try await store.send(draft)
         } else {
             try await store.draft(draft)
         }
+        return draft
+    }
+
+    /// The absolute path of a file Mail can attach.
+    static func attachmentPath(_ path: String) throws -> String {
+        let expanded = (path as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            throw MacError(.badInput, "--attach: no file at '\(path)'.")
+        }
+        guard !isDirectory.boolValue else {
+            throw MacError(.badInput, "--attach: '\(path)' is a directory; attach files one by one.")
+        }
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            throw MacError(.badInput, "--attach: '\(path)' is not readable.")
+        }
+        return url.path
     }
 
     // MARK: - Index
