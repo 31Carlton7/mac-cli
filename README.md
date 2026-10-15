@@ -41,6 +41,8 @@ mac mail archive <id> <id> --dry-run
 mac mail flag <id>
 mac mail move <id> --to Projects --dry-run
 mac mail draft --to a@b.com --subject "Hi" --body "..."
+mac mail mailboxes create 2026 --parent Projects --account Work --dry-run
+mac mail mailboxes delete Projects/2026 --account Work
 mac messages history +15551234567
 mac messages send +15551234567 "Running 10 min late"
 mac notes list --folder Ideas
@@ -74,6 +76,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - `--json` on every command; sorted keys, ISO 8601 dates; schemas are stable.
 - Exit codes: `0` success, `1` not found / bad input, `2` permission denied.
 - Mutations (`edit`, `delete`, `complete`, `mark-read`, `mark-unread`, `flag`, `unflag`, `archive`, `move`) take exact IDs only — get IDs from `list`/`find`.
+- `mac mail mailboxes create|rename|delete` address a mailbox by path within one `--account` (`Projects/2026`) and take `--dry-run`, which resolves the account and mailbox and prints the planned change without making it. `delete` refuses system mailboxes (Inbox, Sent, Drafts, Trash, Junk, Archive, All Mail and their provider and localized names), mailboxes that still hold messages, and mailboxes with children; `rename` refuses system mailboxes too.
 - Discovery commands: `mac calendar calendars` and `mac reminders lists` return objects (`{id,title,kind}`); `mac mail accounts` returns a plain string array, since a Mail account's name is its identifier.
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
@@ -106,6 +109,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **Windowed reads on large mailboxes are slow.** Cost scales with messages touched: roughly 0.15s/message on a 1.7k-message account and ~1.5s/message on a 50k-message one. Keep `--scan` small on big accounts.
 - Mail search has no body search.
 - Mail composition is plain-text; no attachments.
+- **Mailbox system names are matched by name.** `mac mail mailboxes delete`/`rename` recognise system mailboxes from a fixed list of English, German, French and Spanish names and Gmail's `[Gmail]/` folders; a provider that names its system folders differently is not protected by that check (the empty-mailbox check still applies to delete).
 - Messages: group chats are read-only.
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.
 - `mac messages send` requires an exact handle — it does no normalization.

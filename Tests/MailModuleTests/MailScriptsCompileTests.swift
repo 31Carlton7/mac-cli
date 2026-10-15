@@ -30,4 +30,16 @@ final class MailScriptsCompileTests: XCTestCase {
             }
         }
     }
+
+    func testMailboxScriptsCompile() {
+        for name in hostileNames {
+            let path = "Projects/" + name
+            assertCompiles(MailScripts.mailboxTree(account: name), "mailboxTree \(name)")
+            assertCompiles(MailScripts.createMailbox(account: name, parent: nil, path: name), "createMailbox \(name)")
+            assertCompiles(MailScripts.createMailbox(account: name, parent: "Projects", path: path), "createMailbox nested \(name)")
+            assertCompiles(MailScripts.renameMailbox(account: name, path: path, newName: name, newPath: path + "2"),
+                           "renameMailbox \(name)")
+            assertCompiles(MailScripts.deleteMailbox(account: name, path: path), "deleteMailbox \(name)")
+        }
+    }
 }
