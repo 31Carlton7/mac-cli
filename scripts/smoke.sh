@@ -69,7 +69,7 @@ rc=0; "$MAC" mail read "mac-cli-smoke-absent@example.invalid" --json 2>/dev/null
 [ "$rc" -eq 1 ]
 # By-id actions resolve through the index first: an unknown id fails before Mail is touched.
 UNKNOWN="mac-cli-smoke-no-such-message@example.invalid"
-for verb in archive delete flag; do
+for verb in archive delete flag junk not-junk; do
   if "$MAC" mail "$verb" "$UNKNOWN" --dry-run 2>/dev/null; then
     echo "smoke: $verb of an unknown id should fail" >&2; exit 1
   fi

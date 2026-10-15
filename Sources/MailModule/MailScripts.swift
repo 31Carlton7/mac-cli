@@ -359,6 +359,15 @@ enum MailScripts {
         case .archive, .move: return "move msg to \(destination ?? "missing value")"
         case .delete: return "delete msg"
         case .copy, .addLabel: return "duplicate msg to \(destination ?? "missing value")"
+        case .junk, .notJunk:
+            // Mail's Junk button marks and files; the dictionary only offers
+            // the mark, so the move is explicit. Should Mail file the message
+            // itself once marked, the reference stops resolving (-1728) and
+            // the index check decides.
+            let mark = "set junk mail status of msg to \(mutation == .junk)"
+            guard let destination else { return mark }
+            return [mark, "try", "    move msg to \(destination)", "on error number -1728", "end try"]
+                .joined(separator: "\n                ")
         }
     }
 

@@ -143,7 +143,7 @@ public struct MailCommand: AsyncParsableCommand {
         abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, List.self, Wait.self, Watch.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
-                      Archive.self, Move.self, Copy.self, Label.self, Delete.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
+                      Archive.self, Move.self, Copy.self, Label.self, Delete.self, Junk.self, NotJunk.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
     )
 
     public init() {}
@@ -734,6 +734,50 @@ public struct MailCommand: AsyncParsableCommand {
                                             json: output.json, quiet: output.quiet)
                 }
             }
+        }
+    }
+
+    struct Junk: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Mark messages as junk and move them to their account's Junk, by exact id.",
+            discussion: MailCommand.actionDiscussion("junk") + """
+
+
+                Sets Mail's junk mark (junk mail status), which also trains \
+                Mail's junk filter, then moves the message to the account's \
+                Junk mailbox (Junk Email on Exchange, [Gmail]/Spam on Gmail). \
+                A message already in Junk only gets the mark, and one that has \
+                both is refused.
+                """
+        )
+
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.junk, output: output)
+        }
+    }
+
+    struct NotJunk: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "not-junk",
+            abstract: "Clear the junk mark on messages and return them from Junk to the inbox, by exact id.",
+            discussion: MailCommand.actionDiscussion("not-junk") + """
+
+
+                Clears Mail's junk mark (junk mail status). A message in the \
+                account's Junk mailbox (Junk, Junk Email, [Gmail]/Spam) also \
+                moves to the inbox; elsewhere it stays put. A message that is \
+                neither marked nor in Junk is refused.
+                """
+        )
+
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.notJunk, output: output)
         }
     }
 

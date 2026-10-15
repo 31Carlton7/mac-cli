@@ -63,4 +63,15 @@ final class MailScriptsCompileTests: XCTestCase {
             }
         }
     }
+
+    func testJunkScriptsCompile() {
+        for name in hostileNames {
+            let targets = [MailScripts.ActionTarget(rowID: 7, mailbox: name, destination: "Junk"),
+                           MailScripts.ActionTarget(rowID: 8, mailbox: "Junk", destination: name),
+                           MailScripts.ActionTarget(rowID: 9, mailbox: name, destination: nil)]
+            for mutation in [MailMutation.junk, .notJunk] {
+                assertCompiles(MailScripts.act(mutation, accountID: name, targets: targets), "act \(mutation) \(name)")
+            }
+        }
+    }
 }

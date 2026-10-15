@@ -115,7 +115,7 @@ final class MailActionsReadTests: XCTestCase {
         func row(_ id: Int64, _ url: String, inbox: Bool) throws -> IndexedMessage {
             IndexedMessage(rowID: id, messageID: "m@x", mailbox: try XCTUnwrap(IndexMailbox(rowID: id, url: url, totalCount: 1)),
                            isInInbox: inbox, subject: "", from: "", date: Date(timeIntervalSince1970: 0),
-                           isRead: true, isFlagged: false, hasAttachments: false)
+                           isRead: true, isFlagged: false, isJunk: false, hasAttachments: false)
         }
         // Newest first, as the index returns them.
         let archived = try row(3, "imap://A/Archive", inbox: false)

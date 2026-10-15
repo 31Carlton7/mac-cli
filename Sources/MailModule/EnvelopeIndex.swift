@@ -25,13 +25,15 @@ public struct IndexMailbox: Equatable {
 
     /// Mail leaves Trash and Junk out of an all-mailbox search unless asked,
     /// and so does `search`.
-    var isTrashOrJunk: Bool {
-        isTrash || Self.junkNames.contains(leaf.lowercased())
-    }
+    var isTrashOrJunk: Bool { isTrash || isJunk }
 
     /// Where Mail's Delete puts a message: `Trash` on IMAP and Gmail,
     /// `Deleted Items` on Exchange.
     var isTrash: Bool { Self.trashNames.contains(leaf.lowercased()) }
+
+    /// Where junk mail goes: `Junk` on IMAP, `Junk Email` on Exchange,
+    /// `[Gmail]/Spam` on Gmail.
+    var isJunk: Bool { Self.junkNames.contains(leaf.lowercased()) }
 
     /// The last path component, e.g. `All Mail` for `[Gmail]/All Mail`.
     var leaf: String { path.split(separator: "/").last.map(String.init) ?? path }
@@ -68,6 +70,9 @@ public struct IndexedMessage: Equatable {
     public let date: Date
     public let isRead: Bool
     public let isFlagged: Bool
+    /// Mail's junk mark (`junk mail status`), bit 24 of `messages.flags`.
+    /// Mail sets it, not the server: Gmail's own Spam mostly lacks it.
+    public let isJunk: Bool
     public let hasAttachments: Bool
     /// Mail's on-device category; nil until Mail has categorised the message.
     public var category: MailQuery.Category?
@@ -112,7 +117,7 @@ public final class EnvelopeIndex {
     /// index has the layout this reader was written against.
     private static let layoutProbe = """
     SELECT m.ROWID, m.global_message_id, m.subject_prefix, m.subject, m.sender, m.summary,
-           m.date_received, m.mailbox, m.read, m.flagged, m.deleted,
+           m.date_received, m.mailbox, m.read, m.flagged, m.deleted, m.flags,
            mb.url, mb.total_count, s.subject, a.address, a.comment, su.summary,
            g.message_id_header, l.message_id, l.mailbox_id,
            r.message, r.address, r.type, r.position, t.message
@@ -478,7 +483,7 @@ public final class EnvelopeIndex {
                COALESCE(a.address, ''), COALESCE(a.comment, ''),
                m.date_received, m.read, m.flagged, p.in_inbox,
                EXISTS (SELECT 1 FROM attachments t WHERE t.message = m.ROWID),
-               mb.ROWID, mb.url, mb.total_count, \(onDevice)
+               mb.ROWID, mb.url, mb.total_count, (m.flags >> 24) & 1, \(onDevice)
         FROM picked p
         JOIN messages m ON m.ROWID = p.id
         JOIN mailboxes mb ON mb.ROWID = m.mailbox
@@ -508,12 +513,13 @@ public final class EnvelopeIndex {
                 date: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(s, 5))),
                 isRead: sqlite3_column_int(s, 6) != 0,
                 isFlagged: sqlite3_column_int(s, 7) != 0,
+                isJunk: sqlite3_column_int(s, 13) != 0,
                 hasAttachments: sqlite3_column_int(s, 9) != 0)
-            if sqlite3_column_type(s, 13) != SQLITE_NULL {
-                message.category = MailQuery.Category(modelCategory: Int(sqlite3_column_int(s, 13)))
+            if sqlite3_column_type(s, 14) != SQLITE_NULL {
+                message.category = MailQuery.Category(modelCategory: Int(sqlite3_column_int(s, 14)))
             }
-            message.isPriority = sqlite3_column_int(s, 14) == 1
-            message.summary = blob(s, 15).flatMap(Self.generatedSummary)
+            message.isPriority = sqlite3_column_int(s, 15) == 1
+            message.summary = blob(s, 16).flatMap(Self.generatedSummary)
             out.append(message)
         }
         try addRecipients(db, to: &out)

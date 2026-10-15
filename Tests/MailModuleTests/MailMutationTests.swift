@@ -27,7 +27,7 @@ func statusLines(_ lines: String...) -> String {
 final class MailMutationTests: XCTestCase {
     static let everyMutation: [MailMutation] = [.markRead, .markUnread, .flag, .unflag,
                                                 .archive, .move(to: "Archive"), .delete,
-                                                .copy(to: "Archive"), .addLabel("Receipts")]
+                                                .copy(to: "Archive"), .addLabel("Receipts"), .junk, .notJunk]
 
     lazy var path = EnvelopeIndexFixture.make()
     let mail = FakeDirectory()
@@ -780,6 +780,159 @@ final class MailMutationTests: XCTestCase {
         XCTAssertTrue(error?.message.contains("mac mail label add") == true, error?.message ?? "")
     }
 
+    // MARK: - Junk
+
+    static let junkMark = 1 << 24
+
+    /// Exchange `Junk Email` holding 180, marked junk by Mail; Gmail
+    /// `[Gmail]/Spam` holding 181, filed by the server and unmarked.
+    func addJunkMailboxes() {
+        update("""
+        INSERT INTO mailboxes (ROWID, url) VALUES (45, 'ews://EX/Junk%20Email'), (46, 'imap://GM/%5BGmail%5D/Spam');
+        INSERT INTO message_global_data (ROWID, message_id_header) VALUES (40, '<spam-ex@example.com>'), (41, '<spam-gm@example.com>');
+        INSERT INTO messages (ROWID, global_message_id, subject, date_received, mailbox, flags) VALUES
+            (180, 40, 9, 1787961300, 45, \(Self.junkMark)), (181, 41, 9, 1787961300, 46, 0);
+        """)
+    }
+
+    func testTheJunkMarkIsReadFromItsOwnFlagBit() async throws {
+        addJunkMailboxes()
+        update("UPDATE messages SET flags = \(1 << 25 | 1 << 23) WHERE ROWID = 181;")
+        let index = EnvelopeIndex(path: path)
+        XCTAssertEqual(try index.messages(withID: "spam-ex@example.com").map(\.isJunk), [true])
+        XCTAssertEqual(try index.messages(withID: "spam-gm@example.com").map(\.isJunk), [false],
+                       "Mail's not-junk bit is not the junk mark")
+    }
+
+    func testJunkMovesToEachAccountsJunkMailbox() async throws {
+        addJunkMailboxes()
+        let results = try await actions().apply(.junk, ids: ["q-inv@example.com", "inv-1042@example.com"], dryRun: true)
+        XCTAssertEqual(results.map(\.to), ["Junk Email", "[Gmail]/Spam"])
+        XCTAssertEqual(results.map(\.mailbox), ["Inbox", "Inbox"])
+        XCTAssertTrue(runner.scripts.isEmpty)
+    }
+
+    func testJunkInJunkOnlyMarksAndAlreadyJunkIsRefused() async throws {
+        addJunkMailboxes()
+        let targets = try await store().targets(for: .junk, ids: ["spam-gm@example.com"], account: nil, mailbox: nil)
+        XCTAssertNil(targets.first?.destination, "already filed, so no move")
+        let error = await expectError(.badInput) {
+            _ = try await self.actions().apply(.junk, ids: ["spam-ex@example.com"], dryRun: true)
+        }
+        XCTAssertTrue(error?.message.contains("already junk") == true, error?.message ?? "")
+    }
+
+    func testJunkNeedsExactlyOneJunkMailbox() async {
+        _ = await expectError(.notFound) {
+            _ = try await self.store().targets(for: .junk, ids: ["q-inv@example.com"], account: nil, mailbox: nil)
+        }
+        addJunkMailboxes()
+        update("INSERT INTO mailboxes (ROWID, url) VALUES (47, 'ews://EX/Spam');")
+        let error = await expectError(.badInput) {
+            _ = try await self.store().targets(for: .junk, ids: ["q-inv@example.com"], account: nil, mailbox: nil)
+        }
+        XCTAssertTrue(error?.message.contains("Junk Email, Spam") == true, error?.message ?? "")
+    }
+
+    func testNotJunkReturnsMessagesInJunkToTheInbox() async throws {
+        addJunkMailboxes()
+        let targets = try await store().targets(for: .notJunk, ids: ["spam-ex@example.com", "spam-gm@example.com"],
+                                                account: nil, mailbox: nil)
+        XCTAssertEqual(targets.map(\.destination?.rowID), [5, 1])
+        XCTAssertEqual(targets.map(\.mailboxName), ["Junk Email", "[Gmail]/Spam"])
+    }
+
+    func testNotJunkOutsideJunkOnlyClearsTheMarkOrIsRefused() async throws {
+        addJunkMailboxes()
+        _ = await expectError(.badInput) {
+            _ = try await self.actions().apply(.notJunk, ids: ["q-inv@example.com"], dryRun: true)
+        }
+        update("UPDATE messages SET flags = \(Self.junkMark) WHERE ROWID = 104;")
+        let targets = try await store().targets(for: .notJunk, ids: ["q-inv@example.com"], account: nil, mailbox: nil)
+        XCTAssertEqual(targets.count, 1)
+        XCTAssertNil(targets.first?.destination)
+    }
+
+    func testJunkScriptsMarkThenMove() throws {
+        let script = MailScripts.act(.junk, accountID: "EX", targets: [
+            .init(rowID: 104, mailbox: "Inbox", destination: "Junk Email"),
+        ])
+        let mark = try XCTUnwrap(script.range(of: "set junk mail status of msg to true"))
+        let move = try XCTUnwrap(script.range(of: "move msg to mb2"))
+        let check = try XCTUnwrap(script.range(of: "get name of mb2"))
+        XCTAssertLessThan(check.lowerBound, mark.lowerBound)
+        XCTAssertLessThan(mark.lowerBound, move.lowerBound)
+        XCTAssertTrue(script.contains("on error number -1728"), "Mail filing it first is left to the index check")
+        let back = MailScripts.act(.notJunk, accountID: "EX", targets: [
+            .init(rowID: 180, mailbox: "Junk Email", destination: "Inbox"),
+            .init(rowID: 104, mailbox: "Inbox", destination: nil),
+        ])
+        XCTAssertTrue(back.contains("set junk mail status of msg to false"))
+        XCTAssertEqual(back.components(separatedBy: "move msg to").count, 2, "only the message in Junk moves")
+        XCTAssertFalse(back.contains("delete msg"))
+    }
+
+    func testJunkIsVerifiedByTheMoveOrByTheMark() async throws {
+        addJunkMailboxes()
+        runner.reply = { _ in statusLine(104, "ok") }
+        let before = try await actions().apply(.junk, ids: ["q-inv@example.com"])
+        XCTAssertEqual(before.map(\.verified), [false])
+        runner.reply = { [self] _ in
+            update("UPDATE messages SET mailbox = 45 WHERE ROWID = 104;")
+            return statusLine(104, "ok")
+        }
+        let moved = try await actions().apply(.junk, ids: ["q-inv@example.com"])
+        XCTAssertEqual(moved.map(\.verified), [true])
+
+        runner.reply = { _ in statusLine(181, "ok") }
+        let unmarked = try await actions().apply(.junk, ids: ["spam-gm@example.com"])
+        XCTAssertEqual(unmarked.map(\.verified), [false])
+        runner.reply = { [self] _ in
+            update("UPDATE messages SET flags = \(Self.junkMark) WHERE ROWID = 181;")
+            return statusLine(181, "ok")
+        }
+        let marked = try await actions().apply(.junk, ids: ["spam-gm@example.com"])
+        XCTAssertEqual(marked.map(\.verified), [true])
+    }
+
+    func testGmailNotJunkIsVerifiedByAnInboxLabelOnAReplacementRow() async throws {
+        addJunkMailboxes()
+        runner.reply = { [self] _ in
+            update("""
+            UPDATE messages SET deleted = 1 WHERE ROWID = 181;
+            INSERT INTO messages (ROWID, global_message_id, subject, date_received, mailbox) VALUES (182, 41, 9, 1787961300, 3);
+            INSERT INTO labels (message_id, mailbox_id) VALUES (182, 1);
+            """)
+            return statusLine(181, "ok")
+        }
+        let results = try await actions().apply(.notJunk, ids: ["spam-gm@example.com"])
+        XCTAssertEqual(results.map(\.to), ["INBOX"])
+        XCTAssertEqual(results.map(\.verified), [true])
+        XCTAssertTrue(runner.scripts[0].contains(#"mailbox "[Gmail]/Spam" of acct"#))
+    }
+
+    func testNotJunkStaysUnverifiedWhileTheMessageIsStillInJunk() async throws {
+        addJunkMailboxes()
+        runner.reply = { [self] _ in
+            update("UPDATE messages SET flags = 0 WHERE ROWID = 180;")
+            return statusLine(180, "ok")
+        }
+        let results = try await actions().apply(.notJunk, ids: ["spam-ex@example.com"])
+        XCTAssertEqual(results.map(\.status), [.ok])
+        XCTAssertEqual(results.map(\.verified), [false], "a cleared mark is not a return to the inbox")
+    }
+
+    func testJunkReportsEachAccountSeparately() async throws {
+        addJunkMailboxes()
+        runner.reply = { script in
+            if script.contains(#"account id "GM""#) { throw NSError(domain: "AppleScript", code: -1712) }
+            return statusLine(104, "ok")
+        }
+        let results = try await actions().apply(.junk, ids: ["q-inv@example.com", "inv-1042@example.com"])
+        XCTAssertEqual(results.map(\.status), [.ok, .failed])
+        XCTAssertNotNil(MailActionReceipt(results: results).failure)
+    }
+
     // MARK: - Without the index
 
     func testAnUnreadableIndexFallsBackToTheWindowsWithANotice() async throws {
@@ -806,7 +959,7 @@ final class MailMutationTests: XCTestCase {
         }
         notices = []
         for mutation in [MailMutation.markUnread, .flag, .unflag, .move(to: "Archive"), .delete,
-                         .copy(to: "Archive"), .addLabel("Receipts")] {
+                         .copy(to: "Archive"), .addLabel("Receipts"), .junk, .notJunk] {
             _ = await expectError(.permissionDenied) {
                 _ = try await actions.apply(mutation, ids: ["w1"], dryRun: true)
             }

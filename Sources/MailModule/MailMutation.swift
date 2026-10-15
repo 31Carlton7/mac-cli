@@ -15,6 +15,10 @@ public enum MailMutation: Equatable {
     case copy(to: String)
     /// `copy` for Gmail accounts only, named for what it does there.
     case addLabel(String)
+    /// Sets Mail's junk mark and moves the message to its account's Junk.
+    case junk
+    /// Clears Mail's junk mark and moves a message out of Junk to the inbox.
+    case notJunk
 
     var verb: String {
         switch self {
@@ -27,6 +31,8 @@ public enum MailMutation: Equatable {
         case .delete: return "delete"
         case .copy: return "copy"
         case .addLabel: return "label add"
+        case .junk: return "junk"
+        case .notJunk: return "not-junk"
         }
     }
 
@@ -39,6 +45,8 @@ public enum MailMutation: Equatable {
     /// source row and reappears in the destination, possibly under a new
     /// row id. A copy only has to appear there, as a row or a Gmail label:
     /// `targets` refuses a destination that already holds the message.
+    /// A junk change that moves is checked by the move, since a moved row's
+    /// junk mark is Mail's to set; one that stays put, by the mark.
     func isVisible(on target: MailTarget, in copies: [IndexedMessage],
                    labels: [Int64: [IndexMailbox]]) -> Bool {
         let row = copies.first { $0.rowID == target.message.rowID }
@@ -58,6 +66,8 @@ public enum MailMutation: Equatable {
         case .unflag: return row?.isFlagged == false
         case .archive, .move, .delete: return left && arrived
         case .copy, .addLabel: return arrived
+        case .junk: return target.destination == nil ? row?.isJunk == true : left && arrived
+        case .notJunk: return target.destination == nil ? row?.isJunk == false : left && arrived
         }
     }
 }

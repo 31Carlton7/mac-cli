@@ -411,13 +411,7 @@ public struct IndexMailStore {
             }
             destination = try mailbox(named: name, in: mailboxes, account: account)
         case .delete:
-            let trashes = mailboxes.filter(\.isTrash)
-            guard let trash = trashes.first else {
-                throw MacError(.notFound, "Account '\(account)' has no Trash mailbox.")
-            }
-            guard trashes.count == 1 else {
-                throw MacError(.badInput, "Account '\(account)' has \(trashes.count) Trash mailboxes (\(trashes.map(\.path).joined(separator: ", "))), so mac cannot tell which one Mail uses.")
-            }
+            let trash = try onlyMailbox("Trash", mailboxes.filter(\.isTrash), account: account)
             // Mail's Delete on a message already in Trash erases it.
             if labels.contains(where: { $0.rowID == trash.rowID }) {
                 throw MacError(.badInput, "Message \(id) is already in \(trash.path). mac never erases mail.")
@@ -431,7 +425,7 @@ public struct IndexMailStore {
             // A copy in Trash or Junk is a delete or a junk mark with a copy
             // left behind; those have their own commands.
             if destination.isTrashOrJunk {
-                throw MacError(.badInput, "\(destination.path) is the Trash or Junk mailbox of '\(account)'. Use mac mail delete or mac mail move instead.")
+                throw MacError(.badInput, "\(destination.path) is the Trash or Junk mailbox of '\(account)'. Use mac mail delete or mac mail junk instead.")
             }
             // A second copy could not be told apart from the first, so the
             // result could never be verified.
@@ -439,11 +433,44 @@ public struct IndexMailStore {
             if inInbox || holding.contains(where: { $0.rowID == destination.rowID }) {
                 throw MacError(.badInput, "Message \(id) is already in \(destination.path).")
             }
+        case .junk:
+            let junk = try onlyMailbox("Junk", mailboxes.filter(\.isJunk), account: account)
+            if target.message.mailbox.rowID == junk.rowID || labels.contains(where: { $0.rowID == junk.rowID }) {
+                guard !target.message.isJunk else {
+                    throw MacError(.badInput, "Message \(id) is already junk, in \(junk.path).")
+                }
+                return nil
+            }
+            destination = junk
+        case .notJunk:
+            guard target.message.mailbox.isJunk || labels.contains(where: \.isJunk) else {
+                guard target.message.isJunk else {
+                    throw MacError(.badInput, "Message \(id) is not marked junk and is not in a Junk mailbox.")
+                }
+                return nil
+            }
+            let inboxes = mailboxes.filter(\.isInbox)
+            guard let inbox = inboxes.first, inboxes.count == 1 else {
+                throw MacError(.notFound, "Account '\(account)' has \(inboxes.isEmpty ? "no" : "more than one") inbox, so mac cannot tell where to return the message.")
+            }
+            destination = inbox
         }
         guard destination.rowID != target.message.mailbox.rowID else {
             throw MacError(.badInput, "Message \(id) is already in \(destination.path).\(mutation == .delete ? " mac never erases mail." : "")")
         }
         return destination
+    }
+
+    /// The account's one Trash or Junk mailbox. Both are found by name, so
+    /// several candidates are refused rather than guessed.
+    static func onlyMailbox(_ kind: String, _ candidates: [IndexMailbox], account: String) throws -> IndexMailbox {
+        guard let mailbox = candidates.first else {
+            throw MacError(.notFound, "Account '\(account)' has no \(kind) mailbox.")
+        }
+        guard candidates.count == 1 else {
+            throw MacError(.badInput, "Account '\(account)' has \(candidates.count) \(kind) mailboxes (\(candidates.map(\.path).joined(separator: ", "))), so mac cannot tell which one Mail uses.")
+        }
+        return mailbox
     }
 
     /// `--to` by full path, exact case first, then case-insensitive when only

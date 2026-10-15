@@ -266,4 +266,12 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["label", "remove", "a@x", "Receipts"]))
         XCTAssertTrue(MailCommand.LabelRemove.refusal.contains("Trash"))
     }
+
+    func testJunkAndNotJunkTakeSeveralIDs() throws {
+        for verb in ["junk", "not-junk"] {
+            XCTAssertNoThrow(try MailCommand.parseAsRoot([verb, "a@x", "b@x", "--mailbox", "Junk", "--dry-run", "--json"]), verb)
+            XCTAssertThrowsError(try MailCommand.parseAsRoot([verb]), "\(verb) needs an id")
+            XCTAssertThrowsError(try MailCommand.parseAsRoot([verb, "a@x", "--scan", "50"]), verb)
+        }
+    }
 }
