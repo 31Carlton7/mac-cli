@@ -18,6 +18,14 @@ final class MessagingModelsTests: XCTestCase {
         XCTAssertTrue(json.contains(#""body":"hello""#))
     }
 
+    func testEmailItemIndexFieldsAreAddedOnlyWhenKnown() throws {
+        let email = EmailItem(id: "m1@x", subject: "s", from: "f", date: when,
+                              isRead: true, account: "A", body: nil,
+                              mailbox: "Inbox", to: ["b@c.com"], isFlagged: true, hasAttachments: false)
+        let json = String(data: try Output.encoder.encode(email), encoding: .utf8)!
+        XCTAssertEqual(json, #"{"account":"A","date":"2026-08-27T10:00:00Z","from":"f","hasAttachments":false,"id":"m1@x","isFlagged":true,"isRead":true,"mailbox":"Inbox","subject":"s","to":["b@c.com"]}"#)
+    }
+
     func testMessageItemJSONSchema() throws {
         let message = MessageItem(id: "g1", chat: "+15551234567", sender: "+15551234567",
                                   text: "hey", date: when, isFromMe: false)

@@ -8,9 +8,20 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
     public let isRead: Bool
     public let account: String
     public let body: String?
+    // Known only on some read paths; nil keys are left out of the JSON.
+    public let mailbox: String?
+    public let to: [String]?
+    public let cc: [String]?
+    public let isFlagged: Bool?
+    public let hasAttachments: Bool?
+    public let category: String?
+    public let summary: String?
 
     public init(id: String, subject: String, from: String, date: Date,
-                isRead: Bool, account: String, body: String?) {
+                isRead: Bool, account: String, body: String?,
+                mailbox: String? = nil, to: [String]? = nil, cc: [String]? = nil,
+                isFlagged: Bool? = nil, hasAttachments: Bool? = nil,
+                category: String? = nil, summary: String? = nil) {
         self.id = id
         self.subject = subject
         self.from = from
@@ -18,6 +29,13 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
         self.isRead = isRead
         self.account = account
         self.body = body
+        self.mailbox = mailbox
+        self.to = to
+        self.cc = cc
+        self.isFlagged = isFlagged
+        self.hasAttachments = hasAttachments
+        self.category = category
+        self.summary = summary
     }
 
     public var humanLine: String {
