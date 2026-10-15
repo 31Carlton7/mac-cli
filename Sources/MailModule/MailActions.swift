@@ -239,6 +239,55 @@ public struct MailActions {
         return IndexMailStore.item(message, accounts: unreadable.accounts, body: body)
     }
 
+    /// Codes, links and unsubscribe targets from the message file `read`
+    /// would show. Needs the index and the file: Mail.app has no headers to give.
+    public func extract(id: String, parts: Set<MailExtraction.Part>) throws -> MailExtraction {
+        MailExtraction(try messageFile(id: id, for: "Extracting from a message"), parts: parts)
+    }
+
+    /// Plans how to leave the list `id` came from, and with `confirm` does
+    /// it. A link that needs a browser is only reported, never fetched.
+    public func unsubscribe(id: String, confirm: Bool, send: Bool,
+                            post: (URL) async throws -> Int = OneClickUnsubscribe.post) async throws -> UnsubscribeResult {
+        let message = try messageFile(id: id, for: "Unsubscribing")
+        let bare = EnvelopeIndex.bareMessageID(id)
+        guard let plan = UnsubscribePlan(MailExtraction(message, parts: [.links, .unsubscribe])) else {
+            throw MacError(.notFound, "Message \(bare) has no List-Unsubscribe header and no unsubscribe link.")
+        }
+        var result = UnsubscribeResult(id: bare, plan: plan, send: send, status: .dryRun)
+        guard confirm else { return result }
+        switch plan.method {
+        case .oneClick:
+            guard let url = URL(string: plan.target) else {
+                throw MacError(.badInput, "The one-click unsubscribe target is not a URL: \(plan.target)")
+            }
+            do {
+                let status = try await post(url)
+                result.httpStatus = status
+                result.status = (200..<300).contains(status) ? .unsubscribed : .failed
+            } catch {
+                result.status = .failed
+                result.detail = IndexMailStore.describe(error)
+            }
+        case .mailto:
+            let email = plan.email!
+            try await compose(to: email.to, cc: email.cc, subject: email.subject, body: email.body, send: send)
+            result.status = send ? .sent : .drafted
+        case .open:
+            result.status = .manual
+        }
+        return result
+    }
+
+    private func messageFile(id: String, for what: String) throws -> EmlxMessage {
+        guard let index else { throw Self.needsIndex(what) }
+        do {
+            return try index.file(id: id)
+        } catch is EnvelopeIndex.Unavailable {
+            throw Self.needsIndex(what)
+        }
+    }
+
     /// Applies `mutation` to each id. On the index every id is resolved to
     /// one exact message first, then Mail acts on it by numeric id and the
     /// index confirms the change. Without the index, mark-read and archive

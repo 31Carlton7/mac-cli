@@ -84,6 +84,11 @@ fi
 if "$MAC" mail label remove "$UNKNOWN" Receipts 2>/dev/null; then
   echo "smoke: label remove should always refuse" >&2; exit 1
 fi
+# extract and unsubscribe resolve like read; unsubscribe runs as a dry run only.
+for verb in extract unsubscribe; do
+  rc=0; "$MAC" mail "$verb" "mac-cli-smoke-absent@example.invalid" --json 2>/dev/null || rc=$?
+  [ "$rc" -eq 1 ] || { echo "smoke: $verb of an unknown id exited $rc, not 1" >&2; exit 1; }
+done
 "$MAC" mail draft --to "smoke@example.com" --subject "mac-cli smoke draft — safe to close" --body "Created by scripts/smoke.sh; close this window." --quiet
 printf 'smoke attachment\n' > "${TMPDIR:-/tmp}/mac-cli-smoke.txt"
 "$MAC" mail send --to "smoke@example.com" --markdown "**smoke**" --attach "${TMPDIR:-/tmp}/mac-cli-smoke.txt" --dry-run --json | json_field html | grep -q "<strong>smoke</strong>"
