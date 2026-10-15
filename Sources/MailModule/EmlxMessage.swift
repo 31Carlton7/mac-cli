@@ -57,6 +57,9 @@ public struct EmlxMessage: Equatable {
     public let listUnsubscribePost: String?
     public let body: String
     public let bodyFormat: BodyFormat
+    /// The first text/html part as decoded HTML, whether or not `body` came
+    /// from it. Nil when the message has none.
+    public let html: String?
     public let attachments: [MailAttachment]
     /// Mail's flags word from the trailing property list.
     public let flags: Int64?
@@ -120,6 +123,7 @@ public struct EmlxMessage: Equatable {
         listUnsubscribePost = message.header("List-Unsubscribe-Post")
         body = parts.text
         bodyFormat = parts.format
+        html = parts.html
         attachments = parts.attachments
     }
 
@@ -253,6 +257,7 @@ public struct EmlxMessage: Equatable {
 /// Walks the MIME tree once, choosing the readable text and listing attachments.
 private struct BodyParts {
     var attachments: [MailAttachment] = []
+    private(set) var html: String?
     private(set) var text = ""
     private(set) var format: EmlxMessage.BodyFormat = .none
 
@@ -307,6 +312,7 @@ private struct BodyParts {
         let decoded = MIMEDecoding.text(entity.decodedBody()[...], charset: charset)
             .replacingOccurrences(of: "\r\n", with: "\n")
         if type == "text/html" {
+            if html == nil { html = decoded }
             return (HTMLText.plainText(decoded), .html)
         }
         let isFlowed = entity.contentType.parameters["format"]?.lowercased() == "flowed"

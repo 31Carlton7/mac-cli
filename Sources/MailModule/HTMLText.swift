@@ -5,6 +5,18 @@ import Foundation
 /// content dropped. A reader for agents, not a renderer.
 enum HTMLText {
     static func plainText(_ html: String) -> String {
+        render(html, link: { _, _ in })
+    }
+
+    /// The http, https and mailto links of `html` in document order, each
+    /// with its text as `plainText` renders it, empty for an image link.
+    static func links(_ html: String) -> [(url: String, text: String)] {
+        var links: [(url: String, text: String)] = []
+        _ = render(html, link: { links.append(($0, $1)) })
+        return links
+    }
+
+    private static func render(_ html: String, link: (_ url: String, _ text: String) -> Void) -> String {
         let input = Array(html.unicodeScalars)
         var text: [Unicode.Scalar] = []
         var preDepth = 0
@@ -60,6 +72,7 @@ enum HTMLText {
                         if let target = linkTarget {
                             let linkText = String(String.UnicodeScalarView(text[min(linkTextStart, text.count)...]))
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
+                            link(target, linkText)
                             if linkText != target && "mailto:\(linkText)" != target {
                                 text.append(contentsOf: (linkText.isEmpty ? target : " (\(target))").unicodeScalars)
                             }

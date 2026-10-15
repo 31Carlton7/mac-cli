@@ -179,17 +179,11 @@ public struct IndexMailStore {
     /// One message with its body, decoded from its file. A message copied
     /// into several mailboxes is read from its inbox copy, then the newest.
     public func read(id: String) async throws -> EmailItem {
-        try index.ensureReadable()
-        guard let message = Self.preferredCopy(try index.messages(withID: id)) else {
-            throw MacError(.notFound, "No message with id \(EnvelopeIndex.bareMessageID(id)) in Mail's Envelope Index. List it again with: mac mail unread")
-        }
+        let message = try indexedMessage(id: id)
         let accounts = try await directory.accounts()
         let decoded: EmlxMessage
         do {
-            // The row's own mailbox holds the file: All Mail for a Gmail
-            // message, even one shown in the inbox through a label.
-            decoded = try files().message(accountID: message.mailbox.accountID,
-                                          mailboxURL: message.mailbox.url, rowID: message.rowID)
+            decoded = try file(of: message)
         } catch let error as MacError {
             throw FileUnreadable(message: message, accounts: accounts, error: error)
         }
@@ -197,6 +191,27 @@ public struct IndexMailStore {
                          attachments: decoded.attachments.map {
                              EmailAttachment(name: $0.name, mimeType: $0.mimeType, size: $0.size, isExternal: $0.isExternal)
                          })
+    }
+
+    /// The decoded file of the message `read` shows for `id`, without asking
+    /// Mail.app for anything.
+    public func file(id: String) throws -> EmlxMessage {
+        try file(of: try indexedMessage(id: id))
+    }
+
+    private func indexedMessage(id: String) throws -> IndexedMessage {
+        try index.ensureReadable()
+        guard let message = Self.preferredCopy(try index.messages(withID: id)) else {
+            throw MacError(.notFound, "No message with id \(EnvelopeIndex.bareMessageID(id)) in Mail's Envelope Index. List it again with: mac mail unread")
+        }
+        return message
+    }
+
+    /// The row's own mailbox holds the file: All Mail for a Gmail message,
+    /// even one shown in the inbox through a label.
+    private func file(of message: IndexedMessage) throws -> EmlxMessage {
+        try files().message(accountID: message.mailbox.accountID,
+                            mailboxURL: message.mailbox.url, rowID: message.rowID)
     }
 
     /// Rows come newest first.
