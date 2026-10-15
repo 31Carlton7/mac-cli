@@ -146,7 +146,7 @@ public struct MailboxActions {
         let matches = tree.mailboxes.map(\.path).filter { $0.caseInsensitiveCompare(path) == .orderedSame }
         switch matches.count {
         case 1: return matches[0]
-        case 0: throw MacError(.notFound, "No mailbox '\(path)' in \(tree.account).")
+        case 0: throw noMailbox(path, tree.account)
         default:
             throw MacError(.badInput, "'\(path)' matches several mailboxes in \(tree.account): \(matches.joined(separator: ", ")). Pass the exact spelling.")
         }
@@ -207,9 +207,9 @@ public struct MailboxActions {
         case .noAccount:
             throw noAccount(account)
         case .noMailbox:
-            throw MacError(.notFound, "No mailbox '\(path)' in \(account).")
+            throw noMailbox(path, account)
         case .noParent:
-            throw MacError(.notFound, "No mailbox '\(parent ?? "")' in \(account).")
+            throw noMailbox(parent ?? "", account)
         case .exists:
             throw MacError(.badInput, "A mailbox named '\(clash ?? path)' already exists in \(account).")
         case .hasChildren(let n):
@@ -225,6 +225,10 @@ public struct MailboxActions {
 
     static func noAccount(_ name: String) -> MacError {
         MacError(.notFound, "No mail account named '\(name)'. Run: mac mail accounts")
+    }
+
+    static func noMailbox(_ path: String, _ account: String) -> MacError {
+        MacError(.notFound, "No mailbox '\(path)' in \(account). Run: mac mail mailboxes")
     }
 
     static func hasChildren(_ path: String, _ n: Int) -> MacError {

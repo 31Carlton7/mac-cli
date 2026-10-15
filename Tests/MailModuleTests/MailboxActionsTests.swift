@@ -107,8 +107,8 @@ final class MailboxActionsTests: XCTestCase {
         }
     }
 
-    func testUnknownMailboxIsNotFound() async {
-        await assertMacError(.notFound, containing: "Nope") {
+    func testUnknownMailboxIsNotFoundPointingAtTheList() async {
+        await assertMacError(.notFound, containing: "Run: mac mail mailboxes") {
             _ = try await self.actions.delete(path: "Nope", account: "Work", dryRun: false)
         }
         await assertMacError(.notFound) {
@@ -300,7 +300,7 @@ final class MailboxActionsTests: XCTestCase {
 
     func testCreateRaceWithAMissingParentIsNotFound() async {
         store.result = .noParent
-        await assertMacError(.notFound, containing: "Projects") {
+        await assertMacError(.notFound, containing: "No mailbox 'Projects' in Work. Run: mac mail mailboxes") {
             _ = try await self.actions.create(name: "X", parent: "Projects", account: "Work", dryRun: false)
         }
     }

@@ -11,14 +11,49 @@ struct MailboxTargetOptions: ParsableArguments {
 extension MailCommand {
     struct Mailboxes: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Create, rename, and delete mailboxes.",
+            abstract: "List, create, rename, and delete mailboxes.",
             discussion: """
                 Mailboxes are addressed by path within one account; nested \
-                mailboxes use '/', as in Projects/2026. Every subcommand takes \
-                --dry-run.
+                mailboxes use '/', as in Projects/2026. create, rename and \
+                delete take --dry-run.
                 """,
-            subcommands: [Create.self, Rename.self, Delete.self]
+            subcommands: [List.self, Create.self, Rename.self, Delete.self],
+            defaultSubcommand: List.self
         )
+
+        struct List: AsyncParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "List mailboxes with their total and unread counts (the default).",
+                discussion: """
+                    Reads Mail's Envelope Index, so it needs Full Disk Access (see: \
+                    mac doctor). A Gmail label counts every message it labels. \
+                    Empty system mailboxes such as Exchange's Journal or Gmail's \
+                    Starred are left out unless --all; empty mailboxes you made are \
+                    always listed. The MAILBOX column is what --mailbox and in: accept.
+
+                    Examples:
+                      mac mail mailboxes
+                      mac mail mailboxes --account Work --all --json
+                    """
+            )
+
+            @Option(help: "Only this account.") var account: String?
+            @ArgumentParser.Flag(help: "Include empty system mailboxes.") var all = false
+            @OptionGroup var accountCache: AccountCacheOptions
+            @OptionGroup var output: OutputOptions
+
+            func run() async {
+                await withErrorHandling(json: output.json) {
+                    let rows = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
+                        .mailboxes(account: account, all: all)
+                    if output.json {
+                        Output.emit(rows, json: true)
+                    } else if !rows.isEmpty {
+                        print(MailboxSummary.table(rows))
+                    }
+                }
+            }
+        }
 
         struct Create: AsyncParsableCommand {
             static let configuration = CommandConfiguration(

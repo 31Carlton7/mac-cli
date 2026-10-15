@@ -3,9 +3,9 @@ import Foundation
 
 public struct MailActions {
     let store: MailStore
-    /// Answers `unread`, `search`, `read` and `accounts` when Mail's Envelope Index is
-    /// readable. Without it, or when the index is unavailable, every read
-    /// goes through `store`'s Mail.app windows.
+    /// Answers `unread`, `search`, `read`, `list`, `mailboxes` and `accounts`
+    /// when Mail's Envelope Index is readable. Without it, or when the index
+    /// is unavailable, reads go through `store`'s Mail.app windows where they can.
     let index: IndexMailStore?
     let notice: (String) -> Void
 
@@ -38,13 +38,7 @@ public struct MailActions {
         if let indexed = try await fromIndex(scan: scan, { try await $0.unread(account: account, limit: limit) }) {
             return indexed
         }
-        var collected: [EmailItem] = []
-        for name in try await targetAccounts(account) {
-            collected.append(contentsOf: try await store.window(account: name, scan: scan ?? Self.defaultScan)
-                .filter { !$0.isRead })
-            if collected.count >= limit { break }
-        }
-        return Self.newestFirst(collected, limit: limit)
+        return try await sweep(try await targetAccounts(account), scan: scan, limit: limit) { !$0.isRead }
     }
 
     public func search(query: String, limit: Int, scan: Int? = nil, now: Date = Date()) async throws -> [EmailItem] {
@@ -61,13 +55,39 @@ public struct MailActions {
         guard let words = parsed.plainText else {
             throw MacError(.permissionDenied, "Search operators need Mail's Envelope Index. Grant Full Disk Access to your terminal app, or run: mac doctor")
         }
-        var collected: [EmailItem] = []
-        for name in try await orderedAccounts() {
-            collected.append(contentsOf: try await store.window(account: name, scan: scan ?? Self.defaultScan)
-                .filter { item in words.allSatisfy { Self.matches($0, item) } })
-            if collected.count >= limit { break }
+        return try await sweep(try await orderedAccounts(), scan: scan, limit: limit) { item in
+            words.allSatisfy { Self.matches($0, item) }
         }
-        return Self.newestFirst(collected, limit: limit)
+    }
+
+    /// The newest messages of `mailbox` (default: every inbox), narrowed by
+    /// `query` and the flags. Without the index, only an inbox listing that
+    /// uses plain words and `--unread` can fall back to Mail.app windows.
+    public func list(query: String?, mailbox: String?, account: String?, unread: Bool, flagged: Bool,
+                     limit: Int, scan: Int? = nil, now: Date = Date()) async throws -> [EmailItem] {
+        var filters = try query.map { try MailQuery(parsing: $0, now: now).terms } ?? []
+        if unread { filters.append(MailQuery.Term(.state(.unread))) }
+        if flagged { filters.append(MailQuery.Term(.state(.flagged))) }
+        let name = (mailbox ?? "inbox").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            throw MacError(.badInput, "--mailbox cannot be empty.")
+        }
+        try validate(limit: limit)
+        if let scan { try validate(scan: scan) }
+        let windowFilter = name.lowercased() == "inbox" ? Self.windowFilter(filters) : nil
+        let what = "Listing a mailbox other than the inbox, or with --flagged or operators,"
+        if let indexed = try await fromIndex(scan: scan, needs: windowFilter == nil ? what : nil, {
+            try await $0.list(filters, mailbox: name, account: account, limit: limit)
+        }) {
+            return indexed
+        }
+        guard let windowFilter else { throw Self.needsIndex(what) }
+        return try await sweep(try await targetAccounts(account), scan: scan, limit: limit, windowFilter)
+    }
+
+    /// Mailboxes with their total and unread counts, from the index only.
+    public func mailboxes(account: String?, all: Bool) async throws -> [MailboxSummary] {
+        try await indexOnly("Listing mailboxes") { try await $0.mailboxes(account: account, all: all) }
     }
 
     /// From the index and the message's file. A message the index knows but
@@ -205,16 +225,35 @@ public struct MailActions {
     /// The index's answer, or nil after printing why the caller must fall
     /// back to Mail.app. Only an unusable index falls back: a failed query
     /// on a readable index is an error, never a fallback.
-    private func fromIndex(scan: Int?, _ read: (IndexMailStore) async throws -> [EmailItem]) async throws -> [EmailItem]? {
+    /// With `needs`, naming what cannot run without the index, an unusable
+    /// index is `permissionDenied` instead.
+    private func fromIndex(scan: Int?, needs: String? = nil,
+                           _ read: (IndexMailStore) async throws -> [EmailItem]) async throws -> [EmailItem]? {
         guard let index else { return nil }
         do {
             let items = try await read(index)
             if scan != nil { notice(Self.scanIgnored) }
             return items
         } catch let unavailable as EnvelopeIndex.Unavailable {
+            if let needs { throw Self.needsIndex(needs) }
             notice(Self.fallingBack(unavailable.error))
             return nil
         }
+    }
+
+    /// For work only the index can do: a missing or unusable index is
+    /// `needsIndex(what)`.
+    private func indexOnly<T>(_ what: String, _ read: (IndexMailStore) async throws -> T) async throws -> T {
+        guard let index else { throw Self.needsIndex(what) }
+        do {
+            return try await read(index)
+        } catch is EnvelopeIndex.Unavailable {
+            throw Self.needsIndex(what)
+        }
+    }
+
+    static func needsIndex(_ what: String) -> MacError {
+        MacError(.permissionDenied, "\(what) needs Mail's Envelope Index. Grant Full Disk Access to your terminal app, or run: mac doctor")
     }
 
     static let scanIgnored = "note: --scan is ignored: Mail's Envelope Index covers every message."
@@ -256,6 +295,37 @@ public struct MailActions {
             .filter { $0.inboxCount >= 0 }
             .sorted { $0.inboxCount == $1.inboxCount ? $0.name < $1.name : $0.inboxCount < $1.inboxCount }
             .map(\.name)
+    }
+
+    // MARK: - Mail.app windows
+
+    /// Collects matching messages from each account's window in turn,
+    /// stopping once `limit` is filled.
+    private func sweep(_ accounts: [String], scan: Int?, limit: Int,
+                       _ keep: (EmailItem) -> Bool) async throws -> [EmailItem] {
+        var collected: [EmailItem] = []
+        for name in accounts {
+            collected.append(contentsOf: try await store.window(account: name, scan: scan ?? Self.defaultScan)
+                .filter(keep))
+            if collected.count >= limit { break }
+        }
+        return Self.newestFirst(collected, limit: limit)
+    }
+
+    /// What a window item can answer: plain words against subject and
+    /// sender, and the read flag. nil when the terms need the index.
+    static func windowFilter(_ terms: [MailQuery.Term]) -> ((EmailItem) -> Bool)? {
+        var checks: [(EmailItem) -> Bool] = []
+        for term in terms {
+            guard !term.negated else { return nil }
+            switch term.predicate {
+            case .text(let words): checks.append { matches(words, $0) }
+            case .state(.unread): checks.append { !$0.isRead }
+            case .state(.read): checks.append { $0.isRead }
+            default: return nil
+            }
+        }
+        return { item in checks.allSatisfy { $0(item) } }
     }
 
     // MARK: - Helpers

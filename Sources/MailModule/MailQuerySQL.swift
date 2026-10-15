@@ -111,15 +111,12 @@ extension MailQuery {
             return MailQuerySQL(sql: "EXISTS (SELECT 1 FROM message_global_data g WHERE g.ROWID = m.global_message_id AND g.model_category = ?)",
                                 bindings: [.integer(Int64(category.modelCategory))])
         case .mailbox(let name):
-            // The whole path ("[Gmail]/All Mail") or its last component ("All Mail").
             // Gmail keeps one row in All Mail and records other mailboxes in `labels`.
-            let path = percentEncodedPath(name).lowercased()
-            let mailboxes = "SELECT ROWID FROM mailboxes WHERE lower(\(urlPath)) = ? OR lower(\(urlPath)) LIKE ? ESCAPE '\\'"
-            let bindings: [MailQuerySQL.Binding] = [.text(path), .text("%/" + escapeLike(path))]
+            let mailboxes = mailboxRows(named: name)
             return MailQuerySQL(sql: """
-                m.mailbox IN (\(mailboxes)) \
-                OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(mailboxes)))
-                """, bindings: bindings + bindings)
+                m.mailbox IN (\(mailboxes.sql)) \
+                OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(mailboxes.sql)))
+                """, bindings: mailboxes.bindings + mailboxes.bindings)
         case .account(let name):
             guard let id = accountIDs[name]
                     ?? accountIDs.first(where: { $0.key.caseInsensitiveCompare(name) == .orderedSame })?.value else {
@@ -133,6 +130,31 @@ extension MailQuery {
             return MailQuerySQL(sql: "m.date_received < ?", bindings: [.integer(unixSeconds(date))])
         }
     }
+
+    /// `SELECT ROWID FROM mailboxes` for the mailboxes `name` picks, in any
+    /// account: the whole path (`[Gmail]/All Mail`) or its last component
+    /// (`All Mail`), case-insensitively. `sent`, `trash`, `junk` and `spam`
+    /// also pick the names providers give those mailboxes.
+    static func mailboxRows(named name: String) -> MailQuerySQL {
+        var conditions: [String] = []
+        var bindings: [MailQuerySQL.Binding] = []
+        for alias in mailboxAliases[name.lowercased()] ?? [name] {
+            let path = percentEncodedPath(alias).lowercased()
+            conditions.append("lower(\(urlPath)) = ? OR lower(\(urlPath)) LIKE ? ESCAPE '\\'")
+            bindings += [.text(path), .text("%/" + escapeLike(path))]
+        }
+        return MailQuerySQL(sql: "SELECT ROWID FROM mailboxes WHERE \(conditions.joined(separator: " OR "))",
+                            bindings: bindings)
+    }
+
+    /// Gmail calls its Sent mailbox `[Gmail]/Sent Mail` and Exchange calls it
+    /// `Sent Items`, so `in:sent` names every account's own.
+    static let mailboxAliases: [String: [String]] = {
+        let sent = ["sent", "sent mail", "sent items", "sent messages"]
+        let trash = ["trash", "bin", "deleted items", "deleted messages"]
+        let junk = ["junk", "spam", "junk email", "junk e-mail", "bulk mail"]
+        return ["sent": sent, "trash": trash, "junk": junk, "spam": junk]
+    }()
 
     static func recipientSQL(type: Int64, _ text: String) -> MailQuerySQL {
         let p = MailQuerySQL.Binding.text(likePattern(text))

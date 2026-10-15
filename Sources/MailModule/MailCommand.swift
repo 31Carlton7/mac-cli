@@ -40,7 +40,7 @@ public struct MailCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "mail",
         abstract: "Read, triage, and compose email.",
-        subcommands: [Unread.self, Search.self, Read.self, Draft.self, Send.self,
+        subcommands: [Unread.self, Search.self, List.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
                       Archive.self, Move.self, Delete.self, Accounts.self, Mailboxes.self]
     )
@@ -121,6 +121,7 @@ public struct MailCommand: AsyncParsableCommand {
                   has:attachment
                   is:unread  is:read  is:flagged  is:priority
                   in:MAILBOX  account:NAME      in:Trash searches Trash too
+                  in:sent  in:trash  in:junk    also Sent Items, Deleted Items, Spam
                   category:primary|transactions|updates|promotions
                   after: before: newer: older:  2026-10-01, yesterday, 2h, 3d, 1w
                   "quoted phrase"               one exact phrase
@@ -147,6 +148,52 @@ public struct MailCommand: AsyncParsableCommand {
             await withErrorHandling(json: output.json) {
                 let items = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
                     .search(query: query, limit: limit, scan: scan)
+                Output.emit(items, json: output.json)
+            }
+        }
+    }
+
+    struct List: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "List the newest messages of a mailbox, by default the inbox.",
+            discussion: """
+                Without --account, lists that mailbox in every enabled account, \
+                newest first. --mailbox takes a path or its last component, as \
+                in:MAILBOX does: INBOX, "Sent Items", "[Gmail]/All Mail", a \
+                Gmail label. sent, trash and junk also match each provider's \
+                own name for them. See every mailbox with: mac mail mailboxes
+
+                QUERY narrows the list with the operators of mac mail search; \
+                --unread and --flagged are is:unread and is:flagged.
+
+                Reads Mail's Envelope Index. When it is unreadable (see: mac \
+                doctor) only an inbox listing with plain words and --unread falls \
+                back to Mail.app, which examines the newest --scan messages of \
+                each inbox.
+
+                Examples:
+                  mac mail list --limit 10
+                  mac mail list --mailbox Sent --account Work
+                  mac mail list --unread --flagged --json
+                  mac mail list 'from:github.com newer:1w' --mailbox Receipts
+                """
+        )
+
+        @Argument(help: "Words and operators, as for mac mail search.") var query: String?
+        @Option(help: "Only this account.") var account: String?
+        @Option(help: "Mailbox path or name (default: the inbox).") var mailbox: String?
+        @ArgumentParser.Flag(help: "Only unread messages.") var unread = false
+        @ArgumentParser.Flag(help: "Only flagged messages.") var flagged = false
+        @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
+        @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
+        @OptionGroup var accountCache: AccountCacheOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let items = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
+                    .list(query: query, mailbox: mailbox, account: account, unread: unread,
+                          flagged: flagged, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
             }
         }

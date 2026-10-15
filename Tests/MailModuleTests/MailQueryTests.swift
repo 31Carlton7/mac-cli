@@ -302,6 +302,20 @@ final class MailQuerySQLTests: XCTestCase {
         XCTAssertEqual(try ids("-in:inbox"), [4, 5, 6])
     }
 
+    func testSentTrashAndJunkNameEachProvidersMailbox() throws {
+        try fixture.exec("""
+            INSERT INTO mailboxes (ROWID, url) VALUES
+              (8, 'imap://AAAA-GMAIL/%5BGmail%5D/Spam'), (9, 'ews://BBBB-EWS/Junk%20Email');
+            UPDATE messages SET mailbox = 8 WHERE ROWID = 2;
+            UPDATE messages SET mailbox = 9 WHERE ROWID = 3;
+            """)
+        XCTAssertEqual(try ids("in:sent"), [5], "Exchange calls it Sent Items")
+        XCTAssertEqual(try ids("in:SENT"), [5])
+        XCTAssertEqual(try ids("in:junk"), [2, 3])
+        XCTAssertEqual(try ids("in:spam"), [2, 3])
+        XCTAssertEqual(try ids("in:\"Junk Email\""), [3], "a provider's own name stays exact")
+    }
+
     func testAccounts() throws {
         XCTAssertEqual(try ids("account:Work"), [3, 5])
         XCTAssertEqual(try ids("account:personal"), [1, 2, 4, 6, 7])

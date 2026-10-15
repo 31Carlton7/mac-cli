@@ -176,6 +176,46 @@ public final class EnvelopeIndex {
         return try allMailboxes(try connection()).filter { wanted.contains($0.accountID) }
     }
 
+    /// The mailboxes of these accounts that `in:<name>` would search.
+    public func mailboxes(named name: String, accountIDs: [String]) throws -> [IndexMailbox] {
+        let db = try connection()
+        let wanted = Set(accountIDs)
+        let rows = MailQuery.mailboxRows(named: name)
+        let stmt = try prepare(db, "SELECT ROWID, url, total_count FROM mailboxes WHERE ROWID IN (\(rows.sql)) ORDER BY ROWID;")
+        defer { sqlite3_finalize(stmt) }
+        rows.bind(stmt)
+        var out: [IndexMailbox] = []
+        try forEachRow(db, stmt) { s in
+            if let mailbox = mailbox(s, 0), wanted.contains(mailbox.accountID) {
+                out.append(mailbox)
+            }
+        }
+        return out
+    }
+
+    /// Unread messages per mailbox ROWID, counting a Gmail label mailbox's
+    /// messages through `labels`. Mailboxes with none are absent.
+    public func unreadCounts(mailboxes: [IndexMailbox]) throws -> [Int64: Int] {
+        guard !mailboxes.isEmpty else { return [:] }
+        let db = try connection()
+        let ids = Self.list(mailboxes.map(\.rowID))
+        let sql = """
+        SELECT mailbox, count(*) FROM (
+            SELECT mailbox, ROWID FROM messages WHERE read = 0 AND deleted = 0 AND mailbox IN (\(ids))
+            UNION
+            SELECT l.mailbox_id, l.message_id FROM labels l JOIN messages m ON m.ROWID = l.message_id
+            WHERE m.read = 0 AND m.deleted = 0 AND l.mailbox_id IN (\(ids))
+        ) GROUP BY mailbox;
+        """
+        let stmt = try prepare(db, sql)
+        defer { sqlite3_finalize(stmt) }
+        var out: [Int64: Int] = [:]
+        try forEachRow(db, stmt) { s in
+            out[sqlite3_column_int64(s, 0)] = Int(sqlite3_column_int64(s, 1))
+        }
+        return out
+    }
+
     // MARK: - Messages
 
     /// Unread messages of these inboxes, newest first. A Gmail inbox holds

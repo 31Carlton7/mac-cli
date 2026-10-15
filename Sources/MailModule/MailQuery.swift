@@ -8,7 +8,8 @@ import Foundation
 ///   address, and Mail's summary;
 /// - `from:`, `to:`, `cc:`, `subject:`, `body:` match one field;
 /// - `has:attachment`, `is:unread|read|flagged|priority`;
-/// - `in:<mailbox>`, `account:<name>`, `category:primary|transactions|updates|promotions`;
+/// - `in:<mailbox>` (`in:sent`, `in:trash` and `in:junk` also take the
+///   provider's own names), `account:<name>`, `category:primary|transactions|updates|promotions`;
 /// - `before:`, `after:`, `older:`, `newer:` take an ISO date, `yesterday`, or a
 ///   time ago like `2h`, `3d`, `1w`, `30m`;
 /// - a leading `-` negates any term.
@@ -87,6 +88,11 @@ public struct MailQuery: Equatable {
             throw MacError(.badInput, "Search query has more than \(Self.maxTerms) terms.")
         }
         terms = try tokens.map { try Self.term($0, now: now, calendar: calendar) }
+    }
+
+    /// Terms built by a command's own flags, such as `list --unread`.
+    init(terms: [Term]) {
+        self.terms = terms
     }
 
     /// Whether a non-negated `in:` term picks the mailboxes to search.

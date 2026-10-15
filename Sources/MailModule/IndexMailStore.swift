@@ -1,6 +1,45 @@
 import Core
 import Foundation
 
+/// One row of `mac mail mailboxes`.
+public struct MailboxSummary: Codable, Equatable, HumanRenderable {
+    public let account: String
+    /// What `--mailbox` and `in:` accept, e.g. `INBOX` or `[Gmail]/Sent Mail`.
+    public let path: String
+    public let total: Int
+    public let unread: Int
+
+    public init(account: String, path: String, total: Int, unread: Int) {
+        self.account = account
+        self.path = path
+        self.total = total
+        self.unread = unread
+    }
+
+    public var humanLine: String {
+        "\(account)  \(path)  \(total)  \(unread)"
+    }
+
+    /// Aligned columns under a header; empty when there are no rows.
+    public static func table(_ rows: [MailboxSummary]) -> String {
+        guard !rows.isEmpty else { return "" }
+        let accountWidth = max(7, rows.map(\.account.count).max()!)
+        let pathWidth = max(7, rows.map(\.path.count).max()!)
+        let totalWidth = max(5, rows.map { String($0.total).count }.max()!)
+        let unreadWidth = max(6, rows.map { String($0.unread).count }.max()!)
+        func line(_ cells: [String]) -> String {
+            let account = cells[0].padding(toLength: accountWidth, withPad: " ", startingAt: 0)
+            let path = cells[1].padding(toLength: pathWidth, withPad: " ", startingAt: 0)
+            let total = String(repeating: " ", count: totalWidth - cells[2].count) + cells[2]
+            let unread = String(repeating: " ", count: unreadWidth - cells[3].count) + cells[3]
+            return "\(account)  \(path)  \(total)  \(unread)"
+        }
+        return ([line(["ACCOUNT", "MAILBOX", "TOTAL", "UNREAD"])]
+            + rows.map { line([$0.account, $0.path, String($0.total), String($0.unread)]) })
+            .joined(separator: "\n")
+    }
+}
+
 /// Reads answered from Mail's Envelope Index, and mutations resolved through
 /// it. Mail.app is asked for the account list, and runs a mutation only once
 /// every target is resolved. Every method checks the index before that call,
@@ -51,7 +90,48 @@ public struct IndexMailStore {
     /// names. Trash and Junk are left out unless the query asks for a mailbox.
     public func search(_ query: MailQuery, limit: Int) async throws -> [EmailItem] {
         try index.ensureReadable()
-        let all = try await directory.accounts(knowing: query.accountNames)
+        return try search(query, accounts: try await directory.accounts(knowing: query.accountNames), limit: limit)
+    }
+
+    /// The newest messages of the mailbox `mailbox` names, by the rules of
+    /// `in:`, in `account` or every enabled account, that match `filters`.
+    /// A name that picks no mailbox there is `notFound`, not an empty list.
+    public func list(_ filters: [MailQuery.Term], mailbox: String, account: String?,
+                     limit: Int) async throws -> [EmailItem] {
+        try index.ensureReadable()
+        let all = try await directory.accounts(knowing: (account.map { [$0] } ?? []) + MailQuery(terms: filters).accountNames)
+        let scope = try account.map { [try MailAccountDirectory.account(named: $0, in: all)] }
+            ?? all.filter(\.isEnabled)
+        if try index.mailboxes(named: mailbox, accountIDs: scope.map(\.id)).isEmpty {
+            let place = account == nil ? "any enabled account" : scope[0].name
+            throw MacError(.notFound, "No mailbox '\(mailbox)' in \(place). Run: mac mail mailboxes")
+        }
+        var terms = filters + [MailQuery.Term(.mailbox(mailbox))]
+        if account != nil { terms.append(MailQuery.Term(.account(scope[0].name))) }
+        return try search(MailQuery(terms: terms), accounts: all, limit: limit)
+    }
+
+    /// Every mailbox of `account`, or of every enabled account, with its
+    /// total and unread counts: accounts in Mail's order, each inbox first.
+    /// Unless `all`, empty system mailboxes such as Exchange's Journal or
+    /// Gmail's Starred are left out. Empty mailboxes you made stay listed.
+    public func mailboxes(account: String?, all: Bool) async throws -> [MailboxSummary] {
+        try index.ensureReadable()
+        let accounts = try await scope(account)
+        let mailboxes = try index.mailboxes(accountIDs: accounts.map(\.id)).filter {
+            all || $0.totalCount > 0 || $0.isInbox || !MailboxActions.isSpecial($0.path)
+        }
+        let unread = try index.unreadCounts(mailboxes: mailboxes)
+        let byAccount = Dictionary(grouping: mailboxes, by: \.accountID)
+        return accounts.flatMap { account in
+            (byAccount[account.id] ?? [])
+                .sorted { ($0.isInbox ? 0 : 1, $0.path.lowercased()) < ($1.isInbox ? 0 : 1, $1.path.lowercased()) }
+                .map { MailboxSummary(account: account.name, path: $0.path, total: $0.totalCount,
+                                      unread: unread[$0.rowID] ?? 0) }
+        }
+    }
+
+    private func search(_ query: MailQuery, accounts all: [MailAccount], limit: Int) throws -> [EmailItem] {
         let named = Set(query.accountNames.map { $0.lowercased() })
         let accounts = all.filter { $0.isEnabled || named.contains($0.name.lowercased()) }
         let accountIDs = Dictionary(all.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })

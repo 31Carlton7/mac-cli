@@ -69,6 +69,13 @@ for verb in archive delete flag; do
 done
 "$MAC" mail draft --to "smoke@example.com" --subject "mac-cli smoke draft — safe to close" --body "Created by scripts/smoke.sh; close this window." --quiet
 echo "   (a draft window opened in Mail — close it whenever)"
+"$MAC" mail list --limit 3 >/dev/null
+"$MAC" mail list 'subject:mac-cli-smoke-should-match-nothing' --mailbox sent --unread --json | grep -q '\[\]'
+"$MAC" mail mailboxes --json | /usr/bin/python3 -c 'import json, sys; rows = json.load(sys.stdin); assert rows and sorted(rows[0]) == ["account", "path", "total", "unread"], rows[:1]'
+if "$MAC" mail list --mailbox "mac-cli-smoke-no-such-mailbox" >/dev/null 2>&1; then
+  echo "smoke: list of an unknown mailbox did not fail" >&2
+  exit 1
+fi
 # Mailbox management runs --dry-run only: it resolves real mailboxes read-only
 # and must refuse the system ones without touching anything.
 MAIL_ACCOUNT=$("$MAC" mail accounts --json | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)[0])')

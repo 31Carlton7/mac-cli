@@ -84,6 +84,72 @@ final class MailActionsIndexTests: XCTestCase {
         XCTAssertTrue(store.queried.isEmpty, "no window was read for a query it cannot answer")
     }
 
+    func testListOfTheInboxFallsBackWithOneNotice() async throws {
+        try lockIndex()
+        let items = try await actions().list(query: "invoice", mailbox: nil, account: nil,
+                                             unread: true, flagged: false, limit: 20)
+        XCTAssertEqual(items.map(\.id), ["window-1"])
+        XCTAssertEqual(store.queried, ["Work"])
+        XCTAssertEqual(notices.count, 1)
+        let none = try await actions().list(query: nil, mailbox: "INBOX", account: nil,
+                                            unread: false, flagged: false, limit: 20)
+            .filter(\.isRead)
+        XCTAssertTrue(none.isEmpty)
+    }
+
+    func testListBeyondTheInboxWithoutTheIndexIsPermissionDenied() async throws {
+        try lockIndex()
+        let cases: [(String?, String?, Bool)] = [
+            (nil, "Sent", false), (nil, nil, true), ("from:billing", nil, false), ("-invoice", nil, false),
+        ]
+        for (query, mailbox, flagged) in cases {
+            do {
+                _ = try await actions().list(query: query, mailbox: mailbox, account: nil,
+                                             unread: false, flagged: flagged, limit: 20)
+                XCTFail("expected permissionDenied for \(query ?? "") \(mailbox ?? "") \(flagged)")
+            } catch let error as MacError {
+                XCTAssertEqual(error.code, .permissionDenied)
+                XCTAssertTrue(error.message.contains("mac doctor"), error.message)
+            }
+        }
+        XCTAssertTrue(store.queried.isEmpty)
+        XCTAssertTrue(notices.isEmpty, "a refusal is not a fallback")
+        XCTAssertEqual(mail.calls, 0)
+    }
+
+    func testListOnTheIndexNeverReadsWindows() async throws {
+        let items = try await actions().list(query: nil, mailbox: "Archive", account: "Work",
+                                             unread: false, flagged: false, limit: 20, scan: 50)
+        XCTAssertEqual(items.map(\.id), ["lunch@example.com"])
+        XCTAssertTrue(store.queried.isEmpty)
+        XCTAssertEqual(notices, [MailActions.scanIgnored])
+    }
+
+    func testListValidatesItsArguments() async {
+        for (mailbox, limit) in [(" ", 20), ("Sent", 0)] {
+            do {
+                _ = try await actions().list(query: nil, mailbox: mailbox, account: nil,
+                                             unread: false, flagged: false, limit: limit)
+                XCTFail("expected badInput")
+            } catch let error as MacError {
+                XCTAssertEqual(error.code, .badInput)
+            } catch { XCTFail("wrong error: \(error)") }
+        }
+        XCTAssertEqual(mail.calls, 0)
+    }
+
+    func testMailboxesWithoutTheIndexArePermissionDenied() async throws {
+        try lockIndex()
+        do {
+            _ = try await actions().mailboxes(account: nil, all: false)
+            XCTFail("expected permissionDenied")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .permissionDenied)
+            XCTAssertTrue(error.message.contains("mac doctor"), error.message)
+        }
+        XCTAssertEqual(mail.calls, 0)
+    }
+
     func testABadOperatorIsBadInputBeforeAnyRead() async {
         do {
             _ = try await actions().search(query: "colour:red", limit: 20)

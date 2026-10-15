@@ -20,6 +20,32 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["archive", "<m1@x>", "--scan", "100"]))
     }
 
+    func testListParses() throws {
+        let list = try XCTUnwrap(MailCommand.parseAsRoot([
+            "list", "from:github.com newer:1w", "--mailbox", "Sent Items", "--account", "Work",
+            "--unread", "--flagged", "--limit", "5", "--json",
+        ]) as? MailCommand.List)
+        XCTAssertEqual(list.query, "from:github.com newer:1w")
+        XCTAssertEqual(list.mailbox, "Sent Items")
+        XCTAssertEqual(list.account, "Work")
+        XCTAssertTrue(list.unread && list.flagged)
+        XCTAssertEqual(list.limit, 5)
+        let bare = try XCTUnwrap(MailCommand.parseAsRoot(["list"]) as? MailCommand.List)
+        XCTAssertNil(bare.query)
+        XCTAssertNil(bare.mailbox)
+    }
+
+    func testMailboxesListsByDefault() throws {
+        XCTAssertTrue(try MailCommand.parseAsRoot(["mailboxes"]) is MailCommand.Mailboxes.List)
+        let list = try XCTUnwrap(MailCommand.parseAsRoot(["mailboxes", "--account", "Work", "--all", "--json"])
+            as? MailCommand.Mailboxes.List)
+        XCTAssertEqual(list.account, "Work")
+        XCTAssertTrue(list.all)
+        XCTAssertTrue(try MailCommand.parseAsRoot(["mailboxes", "list"]) is MailCommand.Mailboxes.List)
+        XCTAssertTrue(try MailCommand.parseAsRoot(["mailboxes", "create", "X", "--account", "Work"])
+            is MailCommand.Mailboxes.Create)
+    }
+
     func testAccountsParses() {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["accounts", "--json"]))
     }
