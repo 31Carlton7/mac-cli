@@ -22,10 +22,10 @@ struct TargetOptions: ParsableArguments {
     @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
     @Option(help: "Only the copy in this mailbox (full path, e.g. Inbox or Archive), when a message is in several.") var mailbox: String?
     @Flag(help: "Print the resolved messages without changing anything.") var dryRun = false
-    @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
 
     /// Prints the receipt, then exits non-zero if any id was not changed.
-    func run(_ mutation: MailMutation, output: OutputOptions) async {
+    /// `scan` reaches only mark-read and archive, which can run without the index.
+    func run(_ mutation: MailMutation, scan: Int? = nil, output: OutputOptions) async {
         await withErrorHandling(json: output.json) {
             let results = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
                 .apply(mutation, ids: ids, account: account, mailbox: mailbox, dryRun: dryRun, scan: scan)
@@ -41,7 +41,8 @@ public struct MailCommand: AsyncParsableCommand {
         commandName: "mail",
         abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, Read.self, Draft.self, Send.self,
-                      MarkRead.self, Archive.self, Accounts.self]
+                      MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
+                      Archive.self, Move.self, Delete.self, Accounts.self]
     )
 
     public init() {}
@@ -51,8 +52,9 @@ public struct MailCommand: AsyncParsableCommand {
         IndexMailStore(directory: MailAccountDirectory(cache: nil))
     }
 
-    static func actionDiscussion(_ verb: String) -> String {
-        """
+    static func actionDiscussion(_ verb: String, extra: String = "") -> String {
+        let args = extra.isEmpty ? "" : " " + extra
+        return """
         Each id is found in Mail's Envelope Index, then Mail.app changes \
         exactly that message by its numeric id, one script per account. A \
         message with copies in several mailboxes is refused until --mailbox \
@@ -63,9 +65,9 @@ public struct MailCommand: AsyncParsableCommand {
         status ok, notFound, failed or dryRun. Exits 1 if any id was not changed.
 
         Examples:
-          mac mail \(verb) <id> --dry-run
-          mac mail \(verb) <id> <id> --json
-          mac mail \(verb) <id> --mailbox Inbox
+          mac mail \(verb) <id>\(args) --dry-run
+          mac mail \(verb) <id> <id>\(args) --json
+          mac mail \(verb) <id>\(args) --mailbox Inbox
         """
     }
 
@@ -221,10 +223,54 @@ public struct MailCommand: AsyncParsableCommand {
         )
 
         @OptionGroup var target: TargetOptions
+        @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var output: OutputOptions
 
         func run() async {
-            await target.run(.markRead, output: output)
+            await target.run(.markRead, scan: scan, output: output)
+        }
+    }
+
+    struct MarkUnread: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "mark-unread",
+            abstract: "Mark messages unread by exact id.",
+            discussion: MailCommand.actionDiscussion("mark-unread")
+        )
+
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.markUnread, output: output)
+        }
+    }
+
+    struct Flag: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Flag messages by exact id.",
+            discussion: MailCommand.actionDiscussion("flag")
+        )
+
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.flag, output: output)
+        }
+    }
+
+    struct Unflag: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Clear the flag on messages by exact id.",
+            discussion: MailCommand.actionDiscussion("unflag")
+        )
+
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.unflag, output: output)
         }
     }
 
@@ -240,10 +286,51 @@ public struct MailCommand: AsyncParsableCommand {
         )
 
         @OptionGroup var target: TargetOptions
+        @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var output: OutputOptions
 
         func run() async {
-            await target.run(.archive, output: output)
+            await target.run(.archive, scan: scan, output: output)
+        }
+    }
+
+    struct Move: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Move messages to a mailbox of their own account, by exact id.",
+            discussion: MailCommand.actionDiscussion("move", extra: "--to Projects") + """
+
+
+                --to names a mailbox by full path, or by its last component when \
+                only one mailbox of the account has it. Gmail is refused: a Gmail \
+                mailbox is a label, and mac does not change labels yet.
+                """
+        )
+
+        @Option(help: "Destination mailbox, looked up in each message's account.") var to: String
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.move(to: to), output: output)
+        }
+    }
+
+    struct Delete: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Move messages to their account's Trash, by exact id. Never erases.",
+            discussion: MailCommand.actionDiscussion("delete") + """
+
+
+                Uses Mail's own Delete, and refuses an account that Mail is set \
+                to erase deleted messages from, or a message already in Trash.
+                """
+        )
+
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.delete, output: output)
         }
     }
 

@@ -20,4 +20,14 @@ final class MailScriptsCompileTests: XCTestCase {
             }
         }
     }
+
+    func testMoreActionScriptsCompile() {
+        for name in hostileNames {
+            let targets = [MailScripts.ActionTarget(rowID: 7, mailbox: name, destination: "Trash"),
+                           MailScripts.ActionTarget(rowID: 8, mailbox: "INBOX", destination: name)]
+            for mutation in [MailMutation.markUnread, .flag, .unflag, .move(to: name), .delete] {
+                assertCompiles(MailScripts.act(mutation, accountID: name, targets: targets), "act \(mutation) \(name)")
+            }
+        }
+    }
 }

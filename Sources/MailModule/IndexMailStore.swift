@@ -142,7 +142,7 @@ public struct IndexMailStore {
             let accountMailboxes = mailboxesByAccount?[owner.id] ?? []
             let target = MailTarget(account: owner, message: message, destination: nil)
             out.append(MailTarget(account: owner, message: message, destination: try Self.destination(
-                for: mutation, target: target,
+                for: mutation, target: target, labels: labels[message.rowID] ?? [],
                 storesLabels: Self.storesLabels(accountMailboxes) || labels[message.rowID] != nil,
                 mailboxes: accountMailboxes)))
         }
@@ -210,10 +210,9 @@ public struct IndexMailStore {
         let deadline = Date().addingTimeInterval(settle)
         while !waiting.isEmpty {
             for i in waiting {
-                let target = targets[i]
-                if mutation.isVisible(on: target, in: try index.messages(withID: target.message.messageID)) {
-                    done.insert(i)
-                }
+                let copies = try index.messages(withID: targets[i].message.messageID)
+                let labels = try index.labels(ofMessages: copies.map(\.rowID))
+                if mutation.isVisible(on: targets[i], in: copies, labels: labels) { done.insert(i) }
             }
             waiting.subtract(done)
             guard !waiting.isEmpty, Date() < deadline else { break }
@@ -223,11 +222,14 @@ public struct IndexMailStore {
     }
 
     /// Where a move sends `target`, or nil for a change that stays put.
-    static func destination(for mutation: MailMutation, target: MailTarget, storesLabels: Bool,
-                            mailboxes: [IndexMailbox]) throws -> IndexMailbox? {
+    /// `labels` are the Gmail label mailboxes the message carries.
+    static func destination(for mutation: MailMutation, target: MailTarget, labels: [IndexMailbox],
+                            storesLabels: Bool, mailboxes: [IndexMailbox]) throws -> IndexMailbox? {
         let id = target.message.messageID
+        let account = target.account.name
+        let destination: IndexMailbox
         switch mutation {
-        case .markRead:
+        case .markRead, .markUnread, .flag, .unflag:
             return nil
         case .archive:
             // Gmail archives by removing the Inbox label. Mail keeps the
@@ -235,20 +237,62 @@ public struct IndexMailStore {
             // it onto itself and can leave the label on the server. Only
             // Mail's own Archive command does it, and that needs its windows.
             if storesLabels {
-                throw MacError(.badInput, "Message \(id) is in Gmail account '\(target.account.name)'. Gmail archives by removing the Inbox label, which Mail does reliably only through its own Archive command; archive it in Mail.")
+                throw MacError(.badInput, "Message \(id) is in Gmail account '\(account)'. Gmail archives by removing the Inbox label, which Mail does reliably only through its own Archive command; archive it in Mail.")
             }
             let archives = mailboxes.filter { $0.path.lowercased() == "archive" }
             guard let archive = archives.first else {
-                throw MacError(.notFound, "Account '\(target.account.name)' has no Archive mailbox.")
+                throw MacError(.notFound, "Account '\(account)' has no Archive mailbox.")
             }
             guard archives.count == 1 else {
-                throw MacError(.badInput, "Account '\(target.account.name)' has \(archives.count) mailboxes named Archive.")
+                throw MacError(.badInput, "Account '\(account)' has \(archives.count) mailboxes named Archive.")
             }
-            guard archive.rowID != target.message.mailbox.rowID else {
-                throw MacError(.badInput, "Message \(id) is already in \(archive.path).")
+            destination = archive
+        case .move(let name):
+            // A Gmail mailbox is a label: moving means removing one label and
+            // adding another, and a scripted move acts on the All Mail copy.
+            if storesLabels {
+                throw MacError(.badInput, "Message \(id) is in Gmail account '\(account)', where a mailbox is a label. mac does not change Gmail labels yet; move it in Mail.")
             }
-            return archive
+            destination = try mailbox(named: name, in: mailboxes, account: account)
+        case .delete:
+            let trashes = mailboxes.filter(\.isTrash)
+            guard let trash = trashes.first else {
+                throw MacError(.notFound, "Account '\(account)' has no Trash mailbox.")
+            }
+            guard trashes.count == 1 else {
+                throw MacError(.badInput, "Account '\(account)' has \(trashes.count) Trash mailboxes (\(trashes.map(\.path).joined(separator: ", "))), so mac cannot tell which one Mail uses.")
+            }
+            // Mail's Delete on a message already in Trash erases it.
+            if labels.contains(where: { $0.rowID == trash.rowID }) {
+                throw MacError(.badInput, "Message \(id) is already in \(trash.path). mac never erases mail.")
+            }
+            destination = trash
         }
+        guard destination.rowID != target.message.mailbox.rowID else {
+            throw MacError(.badInput, "Message \(id) is already in \(destination.path).\(mutation == .delete ? " mac never erases mail." : "")")
+        }
+        return destination
+    }
+
+    /// `--to` by full path, exact case first, then case-insensitive when only
+    /// one mailbox matches that way, then by last path component when only one
+    /// mailbox of the account has it.
+    static func mailbox(named name: String, in mailboxes: [IndexMailbox], account: String) throws -> IndexMailbox {
+        if let exact = mailboxes.first(where: { $0.path == name }) { return exact }
+        let wanted = name.lowercased()
+        let paths = mailboxes.filter { $0.path.lowercased() == wanted }
+        guard paths.count <= 1 else {
+            throw MacError(.badInput, "Account '\(account)' has \(paths.count) mailboxes named '\(name)' in different case: \(paths.map(\.path).joined(separator: ", ")). Give the exact name.")
+        }
+        if let path = paths.first { return path }
+        let leaves = mailboxes.filter { $0.leaf.lowercased() == wanted }
+        guard let match = leaves.first else {
+            throw MacError(.notFound, "Account '\(account)' has no mailbox named '\(name)'.")
+        }
+        guard leaves.count == 1 else {
+            throw MacError(.badInput, "Account '\(account)' has \(leaves.count) mailboxes named '\(name)': \(leaves.map(\.path).joined(separator: ", ")). Give the full path.")
+        }
+        return match
     }
 
     /// Gmail and Google Workspace keep every message once in All Mail and

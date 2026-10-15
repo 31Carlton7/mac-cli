@@ -25,6 +25,9 @@ func statusLines(_ lines: String...) -> String {
 }
 
 final class MailMutationTests: XCTestCase {
+    static let everyMutation: [MailMutation] = [.markRead, .markUnread, .flag, .unflag,
+                                                .archive, .move(to: "Archive"), .delete]
+
     lazy var path = EnvelopeIndexFixture.make()
     let mail = FakeDirectory()
     let runner = FakeRunner()
@@ -296,7 +299,7 @@ final class MailMutationTests: XCTestCase {
     }
 
     func testNoActionScriptUsesWhose() {
-        for mutation in [MailMutation.markRead, .archive] {
+        for mutation in MailMutationTests.everyMutation {
             let script = MailScripts.act(mutation, accountID: "EX", targets: [
                 .init(rowID: 1, mailbox: "Inbox", destination: "Archive"),
             ])
@@ -426,6 +429,206 @@ final class MailMutationTests: XCTestCase {
         XCTAssertEqual(results.map(\.verified), [false])
     }
 
+    // MARK: - Read and flag changes
+
+    func testEachChangeHasItsOwnStatement() {
+        let expected: [(MailMutation, String)] = [
+            (.markRead, "set read status of msg to true"),
+            (.markUnread, "set read status of msg to false"),
+            (.flag, "set flagged status of msg to true"),
+            (.unflag, "set flagged status of msg to false"),
+            (.move(to: "Archive"), "move msg to mb2"),
+            (.delete, "delete msg"),
+        ]
+        for (mutation, statement) in expected {
+            let script = MailScripts.act(mutation, accountID: "EX", targets: [
+                .init(rowID: 1, mailbox: "Inbox", destination: mutation == .markRead ? nil : "Archive"),
+            ])
+            XCTAssertTrue(script.contains(statement), "\(mutation) lacks `\(statement)`")
+        }
+    }
+
+    func testReadAndFlagChangesAreVerifiedFromTheirOwnColumn() async throws {
+        // Each step undoes the one before, so the row never starts in the target state.
+        let cases: [(MailMutation, String)] = [
+            (.markUnread, "UPDATE messages SET read = 0 WHERE ROWID = 110;"),
+            (.flag, "UPDATE messages SET flagged = 1 WHERE ROWID = 110;"),
+            (.unflag, "UPDATE messages SET flagged = 0 WHERE ROWID = 110;"),
+            (.markRead, "UPDATE messages SET read = 1 WHERE ROWID = 110;"),
+        ]
+        for (mutation, change) in cases {
+            runner.reply = { _ in statusLine(110, "ok") }
+            let before = try await actions().apply(mutation, ids: ["hello@example.com"])
+            XCTAssertEqual(before.map(\.verified), [false], "\(mutation) before the index changed")
+            runner.reply = { [self] _ in update(change); return statusLine(110, "ok") }
+            let after = try await actions().apply(mutation, ids: ["hello@example.com"])
+            XCTAssertEqual(after.map(\.verified), [true], "\(mutation) after the index changed")
+            XCTAssertNil(after.first?.to)
+        }
+    }
+
+    // MARK: - Move
+
+    func addProjectMailboxes() {
+        update("""
+        INSERT INTO mailboxes (ROWID, url) VALUES
+            (40, 'ews://EX/Inbox/Projects'), (41, 'ews://EX/Clients/Projects'), (42, 'ews://EX/Inbox/Receipts');
+        """)
+    }
+
+    func testMoveFindsTheMailboxByPathOrUniqueLeaf() async throws {
+        addProjectMailboxes()
+        for (name, rowID) in [("inbox/projects", Int64(40)), ("Receipts", 42), ("deleted items", 7)] {
+            let targets = try await store().targets(for: .move(to: name), ids: ["q-inv@example.com"],
+                                                    account: nil, mailbox: nil)
+            XCTAssertEqual(targets.first?.destination?.rowID, rowID, name)
+        }
+    }
+
+    func testMoveToAnAmbiguousLeafAsksForThePath() async {
+        addProjectMailboxes()
+        let error = await expectError(.badInput) {
+            _ = try await self.store().targets(for: .move(to: "Projects"), ids: ["q-inv@example.com"],
+                                               account: nil, mailbox: nil)
+        }
+        XCTAssertTrue(error?.message.contains("Inbox/Projects") == true, error?.message ?? "")
+    }
+
+    func testMailboxNamesDifferingOnlyInCaseNeedTheExactName() throws {
+        func box(_ rowID: Int64, _ path: String) -> IndexMailbox {
+            IndexMailbox(rowID: rowID, url: "imap://A/" + path, totalCount: 0)!
+        }
+        let boxes = [box(1, "Projects"), box(2, "projects"), box(3, "Receipts")]
+        XCTAssertEqual(try IndexMailStore.mailbox(named: "projects", in: boxes, account: "Work").rowID, 2)
+        XCTAssertEqual(try IndexMailStore.mailbox(named: "Projects", in: boxes, account: "Work").rowID, 1)
+        XCTAssertEqual(try IndexMailStore.mailbox(named: "receipts", in: boxes, account: "Work").rowID, 3)
+        XCTAssertThrowsError(try IndexMailStore.mailbox(named: "PROJECTS", in: boxes, account: "Work")) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+            XCTAssertTrue((error as? MacError)?.message.contains("Projects, projects") == true)
+        }
+    }
+
+    func testMoveToAnUnknownMailboxIsNotFound() async {
+        _ = await expectError(.notFound) {
+            _ = try await self.actions().apply(.move(to: "Nowhere"), ids: ["q-inv@example.com"])
+        }
+        XCTAssertTrue(runner.scripts.isEmpty)
+    }
+
+    func testMoveLooksUpTheMailboxInEachMessagesOwnAccount() async throws {
+        let targets = try await store().targets(for: .move(to: "Archive"),
+                                                ids: ["q-inv@example.com", "read@example.com"],
+                                                account: nil, mailbox: nil)
+        XCTAssertEqual(targets.map(\.destination?.rowID), [6, 9])
+    }
+
+    func testMoveIntoItsOwnMailboxIsRefused() async {
+        _ = await expectError(.badInput) {
+            _ = try await self.store().targets(for: .move(to: "Inbox"), ids: ["q-inv@example.com"],
+                                               account: nil, mailbox: nil)
+        }
+    }
+
+    func testGmailMoveIsRefused() async {
+        let error = await expectError(.badInput) {
+            _ = try await self.actions().apply(.move(to: "[Gmail]/Trash"), ids: ["inv-1042@example.com"], dryRun: true)
+        }
+        XCTAssertTrue(error?.message.contains("label") == true, error?.message ?? "")
+    }
+
+    func testMoveIsVerifiedInTheDestination() async throws {
+        runner.reply = { [self] _ in
+            update("UPDATE messages SET mailbox = 7 WHERE ROWID = 104;")
+            return statusLine(104, "ok")
+        }
+        let results = try await actions().apply(.move(to: "Deleted Items"), ids: ["q-inv@example.com"])
+        XCTAssertEqual(results.map(\.to), ["Deleted Items"])
+        XCTAssertEqual(results.map(\.verified), [true])
+        XCTAssertTrue(runner.scripts[0].contains(#"mailbox "Deleted Items" of acct"#))
+    }
+
+    // MARK: - Delete
+
+    func testDeleteTargetsEachAccountsTrash() async throws {
+        let targets = try await store().targets(for: .delete, ids: ["q-inv@example.com", "inv-1042@example.com"],
+                                                account: nil, mailbox: nil)
+        XCTAssertEqual(targets.map(\.destination?.path), ["Deleted Items", "[Gmail]/Trash"])
+    }
+
+    func testDeleteUsesMailsOwnDeleteOnlyWhereItMovesToTrash() throws {
+        let script = MailScripts.act(.delete, accountID: "EX", targets: [
+            .init(rowID: 104, mailbox: "Inbox", destination: "Deleted Items"),
+        ])
+        let guardLine = try XCTUnwrap(script.range(of: "if not (move deleted messages to trash of acct) then error"))
+        let delete = try XCTUnwrap(script.range(of: "delete msg"))
+        XCTAssertLessThan(guardLine.lowerBound, delete.lowerBound)
+        XCTAssertFalse(MailScripts.act(.flag, accountID: "EX", targets: [
+            .init(rowID: 104, mailbox: "Inbox", destination: nil),
+        ]).contains("move deleted messages"))
+    }
+
+    func testAnAccountThatErasesFailsItsIDsWithoutTouchingOthers() async throws {
+        runner.reply = { script in
+            if script.contains(#"account id "GM""#) {
+                throw NSError(domain: "AppleScript", code: -2700, userInfo: [NSLocalizedDescriptionKey:
+                    "Mail: This account is set to erase deleted messages instead of moving them to Trash; mac never erases mail."])
+            }
+            return statusLine(104, "ok")
+        }
+        let results = try await actions().apply(.delete, ids: ["q-inv@example.com", "inv-1042@example.com"])
+        XCTAssertEqual(results.map(\.status), [.ok, .failed])
+        XCTAssertTrue(results[1].detail?.contains("never erases") == true)
+    }
+
+    func testAMessageAlreadyInTrashIsNeverDeletedAgain() async {
+        for id in ["inv-trash@example.com", "labelled-trash@example.com"] {
+            update("""
+            INSERT OR IGNORE INTO message_global_data (ROWID, message_id_header) VALUES (31, '<labelled-trash@example.com>');
+            INSERT OR IGNORE INTO messages (ROWID, global_message_id, subject, date_received, mailbox) VALUES (160, 31, 9, 1787961300, 3);
+            INSERT OR IGNORE INTO labels (message_id, mailbox_id) VALUES (160, 4);
+            """)
+            let error = await expectError(.badInput) {
+                _ = try await self.actions().apply(.delete, ids: [id])
+            }
+            XCTAssertTrue(error?.message.contains("never erases") == true, error?.message ?? "")
+        }
+        XCTAssertTrue(runner.scripts.isEmpty)
+    }
+
+    func testDeleteNeedsExactlyOneTrash() async {
+        update("INSERT INTO mailboxes (ROWID, url) VALUES (43, 'imap://IM/Deleted%20Messages'), (44, 'imap://IM/Trash');")
+        _ = await expectError(.badInput) {
+            _ = try await self.store().targets(for: .delete, ids: ["read@example.com"], account: nil, mailbox: nil)
+        }
+        let path = EnvelopeIndexFixture.make()
+        self.path = path
+        _ = await expectError(.notFound) {
+            _ = try await self.store().targets(for: .delete, ids: ["read@example.com"], account: nil, mailbox: nil)
+        }
+    }
+
+    func testDeleteIsVerifiedInTrash() async throws {
+        runner.reply = { [self] _ in
+            update("UPDATE messages SET mailbox = 4 WHERE ROWID = 101;")
+            return statusLine(101, "ok")
+        }
+        let results = try await actions().apply(.delete, ids: ["inv-1042@example.com"])
+        XCTAssertEqual(results.map(\.verified), [true])
+    }
+
+    func testDeleteIsVerifiedByATrashLabelOnAReplacementRow() async throws {
+        runner.reply = { [self] _ in
+            update("""
+            UPDATE messages SET deleted = 1 WHERE ROWID = 101;
+            INSERT INTO messages (ROWID, global_message_id, subject, date_received, mailbox) VALUES (170, 1, 1, 1787961600, 3);
+            INSERT INTO labels (message_id, mailbox_id) VALUES (170, 4);
+            """)
+            return statusLine(101, "ok")
+        }
+        let results = try await actions().apply(.delete, ids: ["inv-1042@example.com"])
+        XCTAssertEqual(results.map(\.verified), [true])
+    }
+
     // MARK: - Without the index
 
     func testAnUnreadableIndexFallsBackToTheWindowsWithANotice() async throws {
@@ -450,5 +653,13 @@ final class MailMutationTests: XCTestCase {
         _ = await expectError(.badInput) {
             _ = try await actions.apply(.markRead, ids: ["w1"], mailbox: "Archive")
         }
+        notices = []
+        for mutation in [MailMutation.markUnread, .flag, .unflag, .move(to: "Archive"), .delete] {
+            _ = await expectError(.permissionDenied) {
+                _ = try await actions.apply(mutation, ids: ["w1"], dryRun: true)
+            }
+        }
+        XCTAssertTrue(notices.isEmpty, "the new commands have no window path to fall back to")
+        XCTAssertTrue(windows.queried.count == 1, "only the mark-read above read a window")
     }
 }

@@ -105,7 +105,8 @@ public struct MailActions {
     /// Applies `mutation` to each id. On the index every id is resolved to
     /// one exact message first, then Mail acts on it by numeric id and the
     /// index confirms the change. Without the index, mark-read and archive
-    /// sweep the newest `scan` inbox messages of each account, as 0.6 did.
+    /// sweep the newest `scan` inbox messages of each account, as 0.6 did;
+    /// the other mutations need the index.
     public func apply(_ mutation: MailMutation, ids: [String], account: String? = nil,
                       mailbox: String? = nil, dryRun: Bool = false,
                       scan: Int? = nil) async throws -> [MailActionResult] {
@@ -118,6 +119,7 @@ public struct MailActions {
                 if dryRun { return targets.map { $0.result(.dryRun) } }
                 return try await index.perform(mutation, on: targets, notice: notice)
             } catch let unavailable as EnvelopeIndex.Unavailable {
+                guard mutation.worksWithoutIndex else { throw unavailable.error }
                 notice(Self.actingThroughWindows(unavailable.error))
             }
         }
@@ -133,6 +135,9 @@ public struct MailActions {
     /// that it is reported in the receipt instead, so the changes made stay on it.
     private func windowed(_ mutation: MailMutation, ids: [String], account: String?,
                           dryRun: Bool, scan: Int) async throws -> [MailActionResult] {
+        guard mutation.worksWithoutIndex else {
+            throw MacError(.badInput, "mac mail \(mutation.verb) needs Mail's Envelope Index. Run: mac doctor")
+        }
         let accounts = try await targetAccounts(account)
         var results: [MailActionResult] = []
         var seen: Set<String> = []
@@ -142,10 +147,12 @@ public struct MailActions {
             do {
                 for name in accounts {
                     let hit: Bool
-                    switch (mutation, dryRun) {
-                    case (_, true): hit = try await store.find(id: id, account: name, scan: scan) != nil
-                    case (.markRead, false): hit = try await store.markRead(id: id, account: name, scan: scan)
-                    case (.archive, false): hit = try await store.archive(id: id, account: name, scan: scan)
+                    if dryRun {
+                        hit = try await store.find(id: id, account: name, scan: scan) != nil
+                    } else if mutation == .archive {
+                        hit = try await store.archive(id: id, account: name, scan: scan)
+                    } else {
+                        hit = try await store.markRead(id: id, account: name, scan: scan)
                     }
                     if hit { found = name; break }
                 }

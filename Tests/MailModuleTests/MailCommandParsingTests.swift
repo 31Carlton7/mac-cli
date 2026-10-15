@@ -56,6 +56,18 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertEqual(archive.target.account, "Work")
         XCTAssertEqual(archive.target.mailbox, "Inbox")
         XCTAssertTrue(archive.target.dryRun)
-        XCTAssertNil(archive.target.scan)
+        XCTAssertNil(archive.scan)
+    }
+
+    func testNewActionsParse() throws {
+        for verb in ["mark-unread", "flag", "unflag", "delete"] {
+            XCTAssertNoThrow(try MailCommand.parseAsRoot([verb, "a@x", "b@x", "--dry-run", "--json"]), verb)
+            XCTAssertThrowsError(try MailCommand.parseAsRoot([verb]), "\(verb) needs an id")
+            XCTAssertThrowsError(try MailCommand.parseAsRoot([verb, "a@x", "--scan", "50"]),
+                                 "\(verb) has no window path, so no --scan")
+        }
+        let move = try XCTUnwrap(try MailCommand.parseAsRoot(["move", "a@x", "--to", "Archive"]) as? MailCommand.Move)
+        XCTAssertEqual(move.to, "Archive")
+        XCTAssertThrowsError(try MailCommand.parseAsRoot(["move", "a@x"]), "move needs --to")
     }
 }

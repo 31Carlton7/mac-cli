@@ -280,7 +280,7 @@ enum MailScripts {
     }
 
     /// One message to act on: its numeric id, its own mailbox path, and the
-    /// destination path of a move.
+    /// destination path of a move, or the Trash a delete lands in.
     struct ActionTarget: Equatable {
         let rowID: Int64
         let mailbox: String
@@ -340,6 +340,7 @@ enum MailScripts {
             with timeout of 60 seconds
                 set acct to account id "\(AppleScript.escape(accountID))"
                 get name of acct
+        \(deleteGuard(mutation))
         \(mailboxes)
         \(actions)
             end timeout
@@ -352,8 +353,21 @@ enum MailScripts {
     private static func statement(_ mutation: MailMutation, destination: String?) -> String {
         switch mutation {
         case .markRead: return "set read status of msg to true"
-        case .archive: return "move msg to \(destination ?? "missing value")"
+        case .markUnread: return "set read status of msg to false"
+        case .flag: return "set flagged status of msg to true"
+        case .unflag: return "set flagged status of msg to false"
+        case .archive, .move: return "move msg to \(destination ?? "missing value")"
+        case .delete: return "delete msg"
         }
+    }
+
+    /// Mail's Delete erases instead of moving to Trash when an account is set
+    /// that way, so `delete` refuses such an account before touching anything.
+    private static func deleteGuard(_ mutation: MailMutation) -> String {
+        guard mutation == .delete else { return "" }
+        return """
+                if not (move deleted messages to trash of acct) then error "This account is set to erase deleted messages instead of moving them to Trash; mac never erases mail."
+        """
     }
 
     enum ActionStatus: Equatable {

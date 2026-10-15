@@ -21,14 +21,18 @@ public struct IndexMailbox: Equatable {
     /// Mail leaves Trash and Junk out of an all-mailbox search unless asked,
     /// and so does `search`.
     var isTrashOrJunk: Bool {
-        let leaf = (path.split(separator: "/").last.map(String.init) ?? path).lowercased()
-        return Self.trashAndJunkNames.contains(leaf)
+        isTrash || Self.junkNames.contains(leaf.lowercased())
     }
 
-    private static let trashAndJunkNames: Set<String> = [
-        "trash", "bin", "deleted items", "deleted messages",
-        "junk", "junk email", "junk e-mail", "spam", "bulk mail",
-    ]
+    /// Where Mail's Delete puts a message: `Trash` on IMAP and Gmail,
+    /// `Deleted Items` on Exchange.
+    var isTrash: Bool { Self.trashNames.contains(leaf.lowercased()) }
+
+    /// The last path component, e.g. `All Mail` for `[Gmail]/All Mail`.
+    var leaf: String { path.split(separator: "/").last.map(String.init) ?? path }
+
+    private static let trashNames: Set<String> = ["trash", "bin", "deleted items", "deleted messages"]
+    private static let junkNames: Set<String> = ["junk", "junk email", "junk e-mail", "spam", "bulk mail"]
 
     init?(rowID: Int64, url: String, totalCount: Int) {
         guard let schemeEnd = url.range(of: "://") else { return nil }
