@@ -94,6 +94,7 @@ import json, sys
 rows = json.load(sys.stdin)
 assert all("domain" in r and r["count"] >= r["unreadCount"] for r in rows), "smoke: malformed senders rows"
 '
+"$MAC" mail contacts "mac-cli-smoke-should-match-nothing" --json | grep -q '\[\]'
 # Mailbox management runs --dry-run only: it resolves real mailboxes read-only
 # and must refuse the system ones without touching anything.
 MAIL_ACCOUNT=$("$MAC" mail accounts --json | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)[0])')

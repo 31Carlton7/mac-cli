@@ -18,6 +18,11 @@ public struct IndexMailbox: Equatable {
     /// IMAP calls the inbox `INBOX`, Exchange calls it `Inbox`.
     public var isInbox: Bool { path.lowercased() == "inbox" }
 
+    /// Mail's sent mailbox on IMAP, Exchange, iCloud and Gmail.
+    var isSent: Bool { Self.sentPaths.contains(path.lowercased()) }
+
+    private static let sentPaths: Set<String> = ["sent", "sent items", "sent messages", "[gmail]/sent mail"]
+
     /// Mail leaves Trash and Junk out of an all-mailbox search unless asked,
     /// and so does `search`.
     var isTrashOrJunk: Bool {
@@ -340,6 +345,72 @@ public final class EnvelopeIndex {
                 count: Int(sqlite3_column_int64(s, 2)),
                 unreadCount: Int(sqlite3_column_int64(s, 3)),
                 latest: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(s, 4)))))
+        }
+        return out
+    }
+
+    /// Addresses whose address or display name contains `search`, ranked by
+    /// how many messages you exchanged with them, then by the latest. A
+    /// message counts when they sent it to a `received` mailbox, or when it
+    /// is in a `sent` mailbox (directly or by Gmail label) with them on To or
+    /// Cc. Whoever sent the `sent` mail is you, and is left out.
+    public func contacts(matching search: String, received: [IndexMailbox], sent: [IndexMailbox],
+                         limit: Int) throws -> [MailContact] {
+        let db = try connection()
+        let receivedIDs = received.isEmpty ? "NULL" : Self.list(received.map(\.rowID))
+        let sentIDs = sent.isEmpty ? "NULL" : Self.list(sent.map(\.rowID))
+        let inSent = "(m.mailbox IN (\(sentIDs)) OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(sentIDs))))"
+        // `addresses.address` is NOCASE, so `IN` also picks up the rows of a
+        // matching address stored with another name or letter case.
+        let sql = """
+        WITH matched AS (
+            SELECT ROWID FROM addresses
+            WHERE address IN (SELECT address FROM addresses WHERE address LIKE ?1 ESCAPE '\\' OR comment LIKE ?1 ESCAPE '\\')
+        ), hits AS MATERIALIZED (
+            SELECT m.global_message_id AS gid, m.date_received AS received, a.address AS address, a.comment AS name
+            FROM messages m JOIN addresses a ON a.ROWID = m.sender
+            WHERE m.deleted = 0 AND m.sender IN (SELECT ROWID FROM matched)
+              AND m.mailbox IN (\(receivedIDs)) AND NOT \(inSent)
+            UNION ALL
+            SELECT m.global_message_id, m.date_received, a.address, a.comment
+            FROM recipients r
+            JOIN messages m ON m.ROWID = r.message
+            JOIN addresses a ON a.ROWID = r.address
+            WHERE r.type IN (0, 1) AND r.address IN (SELECT ROWID FROM matched)
+              AND m.deleted = 0 AND \(inSent)
+        ), me AS (
+            SELECT DISTINCT lower(a.address) AS address
+            FROM messages m JOIN addresses a ON a.ROWID = m.sender
+            WHERE m.deleted = 0 AND \(inSent)
+        ), top AS (
+            SELECT lower(address) AS contact, COUNT(DISTINCT gid) AS total, MAX(received) AS latest
+            FROM hits
+            WHERE address != '' AND lower(address) NOT IN (SELECT address FROM me)
+            GROUP BY contact
+            ORDER BY total DESC, latest DESC, contact
+            LIMIT ?2
+        ), names AS (
+            SELECT lower(address) AS contact, name,
+                   row_number() OVER (PARTITION BY lower(address) ORDER BY COUNT(DISTINCT gid) DESC, name) AS rank
+            FROM hits
+            WHERE name != '' AND lower(address) IN (SELECT contact FROM top)
+            GROUP BY lower(address), name
+        )
+        SELECT t.contact, n.name, t.total, t.latest
+        FROM top t LEFT JOIN names n ON n.contact = t.contact AND n.rank = 1
+        ORDER BY t.total DESC, t.latest DESC, t.contact;
+        """
+        let stmt = try prepare(db, sql)
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, MailQuery.likePattern(search), -1, Self.transient)
+        sqlite3_bind_int64(stmt, 2, Int64(max(0, limit)))
+        var out: [MailContact] = []
+        try forEachRow(db, stmt) { s in
+            out.append(MailContact(
+                address: text(s, 0),
+                name: sqlite3_column_type(s, 1) == SQLITE_NULL ? nil : text(s, 1),
+                messageCount: Int(sqlite3_column_int64(s, 2)),
+                lastContact: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(s, 3)))))
         }
         return out
     }

@@ -98,6 +98,27 @@ public struct MailSender: Codable, Equatable, HumanRenderable {
     }
 }
 
+/// An address you have exchanged mail with.
+public struct MailContact: Codable, Equatable, HumanRenderable {
+    public let address: String
+    /// The display name used most for the address; nil when it never had one.
+    public let name: String?
+    public let messageCount: Int
+    public let lastContact: Date
+
+    public init(address: String, name: String?, messageCount: Int, lastContact: Date) {
+        self.address = address
+        self.name = name
+        self.messageCount = messageCount
+        self.lastContact = lastContact
+    }
+
+    public var humanLine: String {
+        let who = [address, name ?? ""].filter { !$0.isEmpty }.joined(separator: "  ")
+        return "\(messageCount)  \(who)  last \(humanDate.string(from: lastContact))"
+    }
+}
+
 public struct MessageItem: Codable, Equatable, HumanRenderable {
     public let id: String
     public let chat: String

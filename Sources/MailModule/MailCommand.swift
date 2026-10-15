@@ -121,7 +121,7 @@ public struct MailCommand: AsyncParsableCommand {
         abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, List.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
-                      Archive.self, Move.self, Delete.self, Open.self, Accounts.self, Mailboxes.self, Senders.self]
+                      Archive.self, Move.self, Delete.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
     )
 
     public init() {}

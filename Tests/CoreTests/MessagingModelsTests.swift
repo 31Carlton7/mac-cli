@@ -63,6 +63,13 @@ final class MessagingModelsTests: XCTestCase {
         XCTAssertTrue(sender.humanLine.hasPrefix("12  shop.example  3 unread  latest "))
     }
 
+    func testMailContactJSONSchema() throws {
+        let contact = MailContact(address: "ann@corp.example", name: "Ann Lee", messageCount: 5, lastContact: when)
+        let json = String(data: try Output.encoder.encode(contact), encoding: .utf8)!
+        XCTAssertEqual(json, #"{"address":"ann@corp.example","lastContact":"2026-08-27T10:00:00Z","messageCount":5,"name":"Ann Lee"}"#)
+        XCTAssertTrue(contact.humanLine.hasPrefix("5  ann@corp.example  Ann Lee  last "))
+    }
+
     func testMessageItemJSONSchema() throws {
         let message = MessageItem(id: "g1", chat: "+15551234567", sender: "+15551234567",
                                   text: "hey", date: when, isFromMe: false)

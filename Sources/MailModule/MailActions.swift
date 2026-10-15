@@ -101,6 +101,16 @@ public struct MailActions {
         }
     }
 
+    /// Index only: Mail.app cannot read the recipients of every sent message.
+    public func contacts(query: String, limit: Int) async throws -> [MailContact] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else {
+            throw MacError(.badInput, "Contacts query cannot be empty.")
+        }
+        try validate(limit: limit)
+        return try await indexOnly { try await $0.contacts(matching: text, limit: limit) }
+    }
+
     /// From the index and the message's file. A message the index knows but
     /// whose file cannot be read comes from Mail.app by its numeric id; one the
     /// index does not know is not found, never a window scan.

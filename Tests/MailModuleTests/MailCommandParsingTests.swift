@@ -18,6 +18,11 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertTrue(senders.accountCache.noCache)
     }
 
+    func testContactsTakesNoCache() throws {
+        let contacts = try XCTUnwrap(MailCommand.parseAsRoot(["contacts", "ann", "--no-cache"]) as? MailCommand.Contacts)
+        XCTAssertTrue(contacts.accountCache.noCache)
+    }
+
     func testReadPathsAcceptScan() {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["unread", "--scan", "100"]))
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["search", "invoice", "--scan", "100"]))

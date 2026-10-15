@@ -198,6 +198,17 @@ public struct IndexMailStore {
         return try index.senders(by: grouping, mailboxes: mailboxes, matching: clause, limit: limit)
     }
 
+    /// Addresses you exchanged mail with in any enabled account. Received
+    /// mail in Trash and Junk does not count.
+    public func contacts(matching text: String, limit: Int) async throws -> [MailContact] {
+        try index.ensureReadable()
+        let accounts = try await directory.accounts().filter(\.isEnabled)
+        let mailboxes = try index.mailboxes(accountIDs: accounts.map(\.id))
+        return try index.contacts(matching: text,
+                                  received: mailboxes.filter { !$0.isSent && !$0.isTrashOrJunk },
+                                  sent: mailboxes.filter(\.isSent), limit: limit)
+    }
+
     // MARK: - Mutations
 
     /// Resolves every id to exactly one live row before anything changes.
