@@ -47,4 +47,15 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertThrowsError(try MailCommand.parseAsRoot(["mark-read"]))
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["mark-read", "<m1@x>"]))
     }
+
+    func testActionsTakeSeveralIDsAndTheTargetFlags() throws {
+        let parsed = try MailCommand.parseAsRoot(["archive", "a@x", "<b@x>", "--account", "Work",
+                                                  "--mailbox", "Inbox", "--dry-run", "--json"])
+        let archive = try XCTUnwrap(parsed as? MailCommand.Archive)
+        XCTAssertEqual(archive.target.ids, ["a@x", "<b@x>"])
+        XCTAssertEqual(archive.target.account, "Work")
+        XCTAssertEqual(archive.target.mailbox, "Inbox")
+        XCTAssertTrue(archive.target.dryRun)
+        XCTAssertNil(archive.target.scan)
+    }
 }

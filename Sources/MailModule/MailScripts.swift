@@ -255,6 +255,12 @@ enum MailScripts {
                     end if
                 end repeat
                 if idx is 0 then return "NOTFOUND"
+                -- Gmail archives by removing the Inbox label; a scripted move to
+                -- a mailbox named Archive would only add a label.
+                repeat with am in mailboxes of acct
+                    set amName to (name of am) as text
+                    if amName starts with "[Gmail]" or amName starts with "[Google Mail]" then return "GMAIL:" & acctName
+                end repeat
                 set archiveBox to missing value
                 repeat with am in mailboxes of acct
                     if (name of am) is "Archive" then
@@ -271,6 +277,104 @@ enum MailScripts {
         end tell
         return "ok"
         """
+    }
+
+    /// One message to act on: its numeric id, its own mailbox path, and the
+    /// destination path of a move.
+    struct ActionTarget: Equatable {
+        let rowID: Int64
+        let mailbox: String
+        let destination: String?
+    }
+
+    /// Applies `mutation` to every target of one account, each addressed by
+    /// Mail's numeric id, with no window and no search. Emits one
+    /// `rowID FS ok|notfound|failed [FS reason]` record per target.
+    ///
+    /// The reference is spelled `«class mssg» id N`: written as
+    /// `message id N`, AppleScript reads `message id` as the RFC header
+    /// property and refuses to compile. The account and every mailbox are
+    /// checked before anything changes, so a missing one stops the whole
+    /// script instead of reporting its messages as not found.
+    static func act(_ mutation: MailMutation, accountID: String, targets: [ActionTarget]) -> String {
+        var paths: [String] = []
+        for target in targets {
+            for path in [target.mailbox] + (target.destination.map { [$0] } ?? []) where !paths.contains(path) {
+                paths.append(path)
+            }
+        }
+        func box(_ path: String) -> String { "mb\(paths.firstIndex(of: path)! + 1)" }
+        let mailboxes = paths.map { path in
+            """
+                    set \(box(path)) to mailbox "\(AppleScript.escape(path))" of acct
+                    get name of \(box(path))
+            """
+        }.joined(separator: "\n")
+        let actions = targets.map { target in
+            """
+                    set r to "\(target.rowID)" & FS
+                    try
+                        set msg to «class mssg» id \(target.rowID) of \(box(target.mailbox))
+                        get id of msg
+                        try
+                            \(statement(mutation, destination: target.destination.map(box)))
+                            set r to r & "ok"
+                        on error errText
+                            set r to r & "failed" & FS & errText
+                        end try
+                    on error errText number errNumber
+                        if errNumber is -1728 then
+                            set r to r & "notfound"
+                        else
+                            set r to r & "failed" & FS & errText
+                        end if
+                    end try
+                    copy r to end of out
+            """
+        }.joined(separator: "\n")
+        return """
+        set FS to character id 31
+        set RS to character id 30
+        set out to {}
+        tell application "Mail"
+            with timeout of 60 seconds
+                set acct to account id "\(AppleScript.escape(accountID))"
+                get name of acct
+        \(mailboxes)
+        \(actions)
+            end timeout
+        end tell
+        set AppleScript's text item delimiters to RS
+        return out as text
+        """
+    }
+
+    private static func statement(_ mutation: MailMutation, destination: String?) -> String {
+        switch mutation {
+        case .markRead: return "set read status of msg to true"
+        case .archive: return "move msg to \(destination ?? "missing value")"
+        }
+    }
+
+    enum ActionStatus: Equatable {
+        case ok, notFound, failed(String)
+    }
+
+    /// Parses `act` output. A record that names no requested row, or an
+    /// unknown status, is ignored, so a target it misses stays unreported
+    /// and the caller counts it as failed.
+    static func actionStatuses(from output: String) -> [Int64: ActionStatus] {
+        var out: [Int64: ActionStatus] = [:]
+        for fields in AppleScript.parseRecords(output) where fields.count >= 2 {
+            guard let rowID = Int64(fields[0]), out[rowID] == nil else { continue }
+            switch fields[1] {
+            case "ok": out[rowID] = .ok
+            case "notfound": out[rowID] = .notFound
+            case "failed": out[rowID] = .failed(fields.count >= 3 ? fields[2] : "Mail reported an error.")
+            default: continue
+            }
+        }
+        return out
     }
 
     static func compose(_ draft: MailDraft, send: Bool) -> String {

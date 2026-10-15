@@ -214,6 +214,26 @@ public final class EnvelopeIndex {
             inboxIDs: inboxIDs, limit: nil, binding: "<\(bare)>", collapseCopies: false)
     }
 
+    /// The Gmail label mailboxes each row carries, keyed by row. A row with
+    /// no labels is absent.
+    public func labels(ofMessages rowIDs: [Int64]) throws -> [Int64: [IndexMailbox]] {
+        guard !rowIDs.isEmpty else { return [:] }
+        let db = try connection()
+        let sql = """
+        SELECT l.message_id, mb.ROWID, mb.url, mb.total_count
+        FROM labels l JOIN mailboxes mb ON mb.ROWID = l.mailbox_id
+        WHERE l.message_id IN (\(Self.list(rowIDs)))
+        ORDER BY l.message_id, mb.ROWID;
+        """
+        let stmt = try prepare(db, sql)
+        defer { sqlite3_finalize(stmt) }
+        var out: [Int64: [IndexMailbox]] = [:]
+        try forEachRow(db, stmt) { s in
+            if let mailbox = mailbox(s, 1) { out[sqlite3_column_int64(s, 0), default: []].append(mailbox) }
+        }
+        return out
+    }
+
     // MARK: - Internals
 
     /// Runs one message query; `binding` fills `?1` in `condition`. With

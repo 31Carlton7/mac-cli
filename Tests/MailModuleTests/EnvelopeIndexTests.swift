@@ -298,21 +298,6 @@ final class EnvelopeIndexTests: XCTestCase {
         XCTAssertTrue(none.isEmpty)
     }
 
-    // MARK: - inbox sizes
-
-    func testAccountInboxesUseMailsCountsAndMarkMissingInboxes() async throws {
-        mail.output = EnvelopeIndexFixture.directoryOutput(EnvelopeIndexFixture.accounts
-            + [MailAccount(id: "NONE", name: "No inbox", isEnabled: true)])
-        let infos = try await store.accountInboxes()
-        XCTAssertEqual(infos, [
-            MailAccountInfo(name: "Personal", inboxCount: 2),
-            MailAccountInfo(name: "Work", inboxCount: 4),
-            MailAccountInfo(name: "Home", inboxCount: 2),
-            MailAccountInfo(name: "Old", inboxCount: 1),
-            MailAccountInfo(name: "No inbox", inboxCount: -1),
-        ])
-    }
-
     // MARK: - Unavailable
 
     func testUnreadableIndexIsPermissionDeniedBeforeAskingMail() async throws {

@@ -41,13 +41,26 @@ public struct MailAccountDirectory {
     /// A name the cached list lacks is asked of Mail.app before it is
     /// reported missing.
     public func account(named name: String) async throws -> MailAccount {
+        try Self.account(named: name, in: try await accounts(knowing: [name]))
+    }
+
+    /// Every account. When the cached list lacks one of `names`, Mail.app
+    /// is asked again first, so no name is reported missing only because
+    /// the cache predates its account.
+    func accounts(knowing names: [String]) async throws -> [MailAccount] {
         let loaded = try await load()
-        if let match = Self.match(name, in: loaded.accounts) { return match }
-        if let snapshot = loaded.cachedAgainst,
-           let match = Self.match(name, in: try await refresh(snapshot)) {
-            return match
+        guard let snapshot = loaded.cachedAgainst,
+              names.contains(where: { Self.match($0, in: loaded.accounts) == nil }) else {
+            return loaded.accounts
         }
-        throw MacError(.notFound, "No mail account named '\(name)'. Run: mac mail accounts")
+        return try await refresh(snapshot)
+    }
+
+    static func account(named name: String, in accounts: [MailAccount]) throws -> MailAccount {
+        guard let match = match(name, in: accounts) else {
+            throw MacError(.notFound, "No mail account named '\(name)'. Run: mac mail accounts")
+        }
+        return match
     }
 
     /// `cachedAgainst` is set only when the list came from the cache.

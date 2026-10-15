@@ -15,6 +15,8 @@ final class MockMailStore: MailStore {
     var sent: [MailDraft] = []
     var markedReadIDs: [String] = []
     var archivedIDs: [String] = []
+    /// Ids whose archive Mail refuses, as an error.
+    var archiveErrors: [String: MacError] = [:]
     /// Bodies by Mail's numeric id, for the by-id lookup.
     var bodies: [Int64: String] = [:]
     var bodyLookups: [String] = []
@@ -70,6 +72,7 @@ final class MockMailStore: MailStore {
         try gate()
         queried.append(account)
         guard windowSlice(account, scan).contains(where: { $0.id == id }) else { return false }
+        if let error = archiveErrors[id] { throw error }
         archivedIDs.append(id)
         return true
     }
@@ -264,7 +267,7 @@ final class MailActionsTests: XCTestCase {
     func testMarkReadSucceedsWhenFoundInALaterAccount() async throws {
         configureThreeAccounts(sizes: [("Tiny", 5), ("Mid", 500), ("Big", 5000)])
         store.byAccount["Big"] = [email("b1", account: "Big")]
-        try await actions.markRead(id: "b1")
+        _ = try await actions.apply(.markRead, ids: ["b1"])
         XCTAssertEqual(store.markedReadIDs, ["b1"])
         XCTAssertEqual(store.queried, ["Tiny", "Mid", "Big"])
     }
@@ -272,7 +275,7 @@ final class MailActionsTests: XCTestCase {
     func testMarkReadUnknownIDThrowsNotFound() async {
         configureThreeAccounts(sizes: [("Tiny", 5), ("Mid", 500), ("Big", 5000)])
         do {
-            try await actions.markRead(id: "nope")
+            _ = try await actions.apply(.markRead, ids: ["nope"])
             XCTFail("expected notFound")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .notFound)
@@ -283,15 +286,39 @@ final class MailActionsTests: XCTestCase {
     func testArchiveSucceedsWhenFoundInALaterAccount() async throws {
         configureThreeAccounts(sizes: [("Tiny", 5), ("Mid", 500), ("Big", 5000)])
         store.byAccount["Mid"] = [email("m1", account: "Mid")]
-        try await actions.archive(id: "m1")
+        _ = try await actions.apply(.archive, ids: ["m1"])
         XCTAssertEqual(store.archivedIDs, ["m1"])
         XCTAssertEqual(store.queried, ["Tiny", "Mid"])
+    }
+
+    func testAFailureAfterAnArchiveKeepsTheReceipt() async throws {
+        configureThreeAccounts(sizes: [("Tiny", 5), ("Mid", 500), ("Big", 5000)])
+        store.byAccount["Mid"] = [email("m1", account: "Mid"), email("m2", account: "Mid")]
+        store.archiveErrors["m2"] = MacError(.badInput, "Account 'Mid' is Gmail.")
+        let results = try await actions.apply(.archive, ids: ["m1", "m2", "m3"])
+        XCTAssertEqual(results.map(\.status), [.ok, .failed, .notFound])
+        XCTAssertEqual(results[1].detail, "Account 'Mid' is Gmail.")
+        XCTAssertEqual(store.archivedIDs, ["m1"])
+        XCTAssertNotNil(MailActionReceipt(results: results).failure)
+    }
+
+    func testAFailureBeforeAnyChangeFailsTheCall() async {
+        configureThreeAccounts(sizes: [("Tiny", 5), ("Mid", 500), ("Big", 5000)])
+        store.byAccount["Mid"] = [email("m1", account: "Mid"), email("m2", account: "Mid")]
+        store.archiveErrors["m1"] = MacError(.badInput, "Account 'Mid' is Gmail.")
+        do {
+            _ = try await actions.apply(.archive, ids: ["m1", "m2"])
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error type") }
+        XCTAssertTrue(store.archivedIDs.isEmpty)
     }
 
     func testArchiveUnknownIDThrowsNotFound() async {
         configureThreeAccounts(sizes: [("Tiny", 5), ("Mid", 500), ("Big", 5000)])
         do {
-            try await actions.archive(id: "nope")
+            _ = try await actions.apply(.archive, ids: ["nope"])
             XCTFail("expected notFound")
         } catch let error as MacError {
             XCTAssertEqual(error.code, .notFound)

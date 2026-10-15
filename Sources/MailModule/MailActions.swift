@@ -102,20 +102,72 @@ public struct MailActions {
         return IndexMailStore.item(message, accounts: unreadable.accounts, body: body)
     }
 
-    public func markRead(id: String, scan: Int = MailActions.defaultScan) async throws {
-        try validate(scan: scan)
-        for name in try await orderedAccounts() {
-            if try await store.markRead(id: id, account: name, scan: scan) { return }
+    /// Applies `mutation` to each id. On the index every id is resolved to
+    /// one exact message first, then Mail acts on it by numeric id and the
+    /// index confirms the change. Without the index, mark-read and archive
+    /// sweep the newest `scan` inbox messages of each account, as 0.6 did.
+    public func apply(_ mutation: MailMutation, ids: [String], account: String? = nil,
+                      mailbox: String? = nil, dryRun: Bool = false,
+                      scan: Int? = nil) async throws -> [MailActionResult] {
+        guard !ids.isEmpty else { throw MacError(.badInput, "Give at least one message id.") }
+        if let scan { try validate(scan: scan) }
+        if let index {
+            do {
+                let targets = try await index.targets(for: mutation, ids: ids, account: account, mailbox: mailbox)
+                if scan != nil { notice(Self.scanIgnored) }
+                if dryRun { return targets.map { $0.result(.dryRun) } }
+                return try await index.perform(mutation, on: targets, notice: notice)
+            } catch let unavailable as EnvelopeIndex.Unavailable {
+                notice(Self.actingThroughWindows(unavailable.error))
+            }
         }
-        throw Self.outsideWindow(id: id, scan: scan)
+        if let mailbox, mailbox.lowercased() != "inbox" {
+            throw MacError(.badInput, "--mailbox needs Mail's Envelope Index; without it only inbox messages can be changed. Run: mac doctor")
+        }
+        return try await windowed(mutation, ids: ids, account: account, dryRun: dryRun,
+                                  scan: scan ?? Self.defaultScan)
     }
 
-    public func archive(id: String, scan: Int = MailActions.defaultScan) async throws {
-        try validate(scan: scan)
-        for name in try await orderedAccounts() {
-            if try await store.archive(id: id, account: name, scan: scan) { return }
+    /// 0.6's path: each id is looked up in every account's window in turn.
+    /// An id missing or failing before anything changed fails the call; after
+    /// that it is reported in the receipt instead, so the changes made stay on it.
+    private func windowed(_ mutation: MailMutation, ids: [String], account: String?,
+                          dryRun: Bool, scan: Int) async throws -> [MailActionResult] {
+        let accounts = try await targetAccounts(account)
+        var results: [MailActionResult] = []
+        var seen: Set<String> = []
+        for id in ids where seen.insert(id).inserted {
+            let changedAny = !dryRun && results.contains { $0.status == .ok }
+            var found: String?
+            do {
+                for name in accounts {
+                    let hit: Bool
+                    switch (mutation, dryRun) {
+                    case (_, true): hit = try await store.find(id: id, account: name, scan: scan) != nil
+                    case (.markRead, false): hit = try await store.markRead(id: id, account: name, scan: scan)
+                    case (.archive, false): hit = try await store.archive(id: id, account: name, scan: scan)
+                    }
+                    if hit { found = name; break }
+                }
+            } catch {
+                guard changedAny else { throw error }
+                results.append(MailActionResult(id: id, account: "", mailbox: "Inbox", to: nil,
+                                                status: .failed, verified: false,
+                                                detail: IndexMailStore.describe(error)))
+                continue
+            }
+            guard let found else {
+                guard changedAny else { throw Self.outsideWindow(id: id, scan: scan) }
+                results.append(MailActionResult(id: id, account: "", mailbox: "Inbox", to: nil,
+                                                status: .notFound, verified: false,
+                                                detail: Self.outsideWindow(id: id, scan: scan).message))
+                continue
+            }
+            results.append(MailActionResult(id: id, account: found, mailbox: "Inbox",
+                                            to: mutation == .archive ? "Archive" : nil,
+                                            status: dryRun ? .dryRun : .ok, verified: false, detail: nil))
         }
-        throw Self.outsideWindow(id: id, scan: scan)
+        return results
     }
 
     public func compose(to: String, cc: String?, subject: String, body: String,
@@ -160,6 +212,10 @@ public struct MailActions {
         "warning: reading this message's body through Mail.app. \(error.message)"
     }
 
+    static func actingThroughWindows(_ error: MacError) -> String {
+        "warning: acting through Mail.app, which sees only the newest --scan messages of each inbox. \(error.message)"
+    }
+
     static func fallingBack(_ error: MacError) -> String {
         "warning: reading through Mail.app, which sees only the newest --scan messages of each inbox. \(error.message)"
     }
@@ -185,21 +241,10 @@ public struct MailActions {
     /// Accounts with no inbox are dropped; ties break by name so the sweep order
     /// is reproducible.
     private func orderedAccounts() async throws -> [String] {
-        try await accountInboxes()
+        try await store.accountInboxes()
             .filter { $0.inboxCount >= 0 }
             .sorted { $0.inboxCount == $1.inboxCount ? $0.name < $1.name : $0.inboxCount < $1.inboxCount }
             .map(\.name)
-    }
-
-    /// Inbox sizes from the index when it is readable, saving a Mail.app
-    /// pass over every account's mailboxes.
-    private func accountInboxes() async throws -> [MailAccountInfo] {
-        if let index {
-            do {
-                return try await index.accountInboxes()
-            } catch is EnvelopeIndex.Unavailable {}
-        }
-        return try await store.accountInboxes()
     }
 
     // MARK: - Helpers

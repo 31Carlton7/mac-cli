@@ -17,6 +17,25 @@ struct AccountCacheOptions: ParsableArguments {
     }
 }
 
+struct TargetOptions: ParsableArguments {
+    @Argument(help: "One or more message ids from 'mac mail unread' or 'mac mail search'.") var ids: [String]
+    @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
+    @Option(help: "Only the copy in this mailbox (full path, e.g. Inbox or Archive), when a message is in several.") var mailbox: String?
+    @Flag(help: "Print the resolved messages without changing anything.") var dryRun = false
+    @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
+
+    /// Prints the receipt, then exits non-zero if any id was not changed.
+    func run(_ mutation: MailMutation, output: OutputOptions) async {
+        await withErrorHandling(json: output.json) {
+            let results = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                .apply(mutation, ids: ids, account: account, mailbox: mailbox, dryRun: dryRun, scan: scan)
+            let receipt = MailActionReceipt(results: results)
+            Output.emit(receipt, json: output.json)
+            if let failure = receipt.failure { throw failure }
+        }
+    }
+}
+
 public struct MailCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "mail",
@@ -30,6 +49,24 @@ public struct MailCommand: AsyncParsableCommand {
     /// Mutations skip the account cache: the account a write targets comes from Mail.app.
     static var uncachedIndex: IndexMailStore {
         IndexMailStore(directory: MailAccountDirectory(cache: nil))
+    }
+
+    static func actionDiscussion(_ verb: String) -> String {
+        """
+        Each id is found in Mail's Envelope Index, then Mail.app changes \
+        exactly that message by its numeric id, one script per account. A \
+        message with copies in several mailboxes is refused until --mailbox \
+        or --account picks one. Afterwards the index is checked, and each \
+        result says whether the change showed up ("verified").
+
+        JSON: {"results":[{"id","account","mailbox","status","verified"}]}, \
+        status ok, notFound, failed or dryRun. Exits 1 if any id was not changed.
+
+        Examples:
+          mac mail \(verb) <id> --dry-run
+          mac mail \(verb) <id> <id> --json
+          mac mail \(verb) <id> --mailbox Inbox
+        """
     }
 
     static let fallbackScanHelp = "Only when Mail's Envelope Index is unreadable: messages to examine per account (default: 30)."
@@ -179,37 +216,34 @@ public struct MailCommand: AsyncParsableCommand {
     struct MarkRead: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "mark-read",
-            abstract: "Mark a message read by exact id."
+            abstract: "Mark messages read by exact id.",
+            discussion: MailCommand.actionDiscussion("mark-read")
         )
 
-        @Argument(help: "Message id.") var id: String
-        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
+        @OptionGroup var target: TargetOptions
         @OptionGroup var output: OutputOptions
 
         func run() async {
-            await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex).markRead(id: id, scan: scan)
-                Output.emitConfirmation(key: "markedRead", value: id, human: "marked read",
-                                        json: output.json, quiet: output.quiet)
-            }
+            await target.run(.markRead, output: output)
         }
     }
 
     struct Archive: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Move a message to its account's Archive mailbox, by exact id."
+            abstract: "Move messages to their account's Archive mailbox, by exact id.",
+            discussion: MailCommand.actionDiscussion("archive") + """
+
+
+                Gmail is refused: Gmail archives by removing the Inbox label, \
+                which Mail does reliably only through its own Archive command.
+                """
         )
 
-        @Argument(help: "Message id.") var id: String
-        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
+        @OptionGroup var target: TargetOptions
         @OptionGroup var output: OutputOptions
 
         func run() async {
-            await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex).archive(id: id, scan: scan)
-                Output.emitConfirmation(key: "archived", value: id, human: "archived",
-                                        json: output.json, quiet: output.quiet)
-            }
+            await target.run(.archive, output: output)
         }
     }
 

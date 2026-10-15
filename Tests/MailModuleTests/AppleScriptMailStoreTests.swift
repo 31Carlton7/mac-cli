@@ -77,4 +77,19 @@ final class AppleScriptMailStoreTests: XCTestCase {
     func testEmptyAccountInboxOutputYieldsNoInfos() {
         XCTAssertTrue(AppleScriptMailStore.accountInfos(from: "").isEmpty)
     }
+
+    /// A Gmail "Archive" is a label: moving there would label, not archive.
+    func testArchiveRefusesGmailAccountsBeforeMoving() throws {
+        let script = MailScripts.archive(account: "Work", id: "<m1@x>", scan: 30)
+        let gmail = try XCTUnwrap(script.range(of: #"return "GMAIL:" & acctName"#))
+        XCTAssertTrue(script.contains(#"starts with "[Gmail]""#))
+        XCTAssertTrue(script.contains(#"starts with "[Google Mail]""#))
+        XCTAssertLessThan(gmail.lowerBound, try XCTUnwrap(script.range(of: "move msg")).lowerBound)
+        XCTAssertThrowsError(try AppleScriptMailStore.archived("GMAIL:Personal")) { error in
+            XCTAssertEqual((error as? MacError)?.code, .badInput)
+            XCTAssertTrue((error as? MacError)?.message.contains("archive it in Mail") == true)
+        }
+        XCTAssertEqual(try AppleScriptMailStore.archived("ok"), true)
+        XCTAssertEqual(try AppleScriptMailStore.archived("NOTFOUND"), false)
+    }
 }

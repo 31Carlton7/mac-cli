@@ -54,9 +54,17 @@ public final class AppleScriptMailStore: MailStore {
     public func archive(id: String, account: String, scan: Int) async throws -> Bool {
         let out = try await AppleScript.run(MailScripts.archive(account: account, id: id, scan: scan),
                                             targetName: "Mail")
+        return try Self.archived(out)
+    }
+
+    static func archived(_ out: String) throws -> Bool {
         if out.hasPrefix("NOARCHIVE:") {
             let account = String(out.dropFirst("NOARCHIVE:".count))
             throw MacError(.notFound, "Account '\(account)' has no Archive mailbox.")
+        }
+        if out.hasPrefix("GMAIL:") {
+            let account = String(out.dropFirst("GMAIL:".count))
+            throw MacError(.badInput, "Account '\(account)' is Gmail. Gmail archives by removing the Inbox label, which Mail does reliably only through its own Archive command; archive it in Mail.")
         }
         return out == "ok"
     }

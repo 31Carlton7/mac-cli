@@ -90,18 +90,9 @@ final class MailActionsIndexTests: XCTestCase {
         XCTAssertEqual(mail.calls, 1)
     }
 
-    /// `mark-read` stays on the Mail.app windows; only its sweep order comes
-    /// from the index: smallest inbox first, accounts without one skipped.
-    func testMarkReadSweepsInIndexInboxOrder() async throws {
-        mail.output = EnvelopeIndexFixture.directoryOutput(
-            EnvelopeIndexFixture.accounts + [MailAccount(id: "NONE", name: "No inbox", isEnabled: true)])
-        _ = try? await actions().markRead(id: "nope")
-        XCTAssertEqual(store.queried, ["Old", "Home", "Personal", "Work"])
-    }
-
     func testMarkReadOrderFallsBackToMailWhenTheIndexIsUnreadable() async throws {
         try lockIndex()
-        _ = try? await actions().markRead(id: "nope")
+        _ = try? await actions().apply(.markRead, ids: ["nope"])
         XCTAssertEqual(store.queried, ["Work"])
     }
 }

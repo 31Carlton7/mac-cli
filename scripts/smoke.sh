@@ -60,6 +60,10 @@ echo "== mail =="
 # An id Mail does not have exits 1 (notFound).
 rc=0; "$MAC" mail read "mac-cli-smoke-absent@example.invalid" --json 2>/dev/null || rc=$?
 [ "$rc" -eq 1 ]
+# By-id actions resolve through the index first: an unknown id fails before Mail is touched.
+if "$MAC" mail archive "mac-cli-smoke-no-such-message@example.invalid" --dry-run 2>/dev/null; then
+  echo "smoke: archive of an unknown id should fail" >&2; exit 1
+fi
 "$MAC" mail draft --to "smoke@example.com" --subject "mac-cli smoke draft — safe to close" --body "Created by scripts/smoke.sh; close this window." --quiet
 echo "   (a draft window opened in Mail — close it whenever)"
 
