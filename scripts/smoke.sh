@@ -68,12 +68,22 @@ assert not bad, "smoke: unexpected mail categories %r" % bad
 rc=0; "$MAC" mail read "mac-cli-smoke-absent@example.invalid" --json 2>/dev/null || rc=$?
 [ "$rc" -eq 1 ]
 # By-id actions resolve through the index first: an unknown id fails before Mail is touched.
+UNKNOWN="mac-cli-smoke-no-such-message@example.invalid"
 for verb in archive delete flag; do
-  if "$MAC" mail "$verb" "mac-cli-smoke-no-such-message@example.invalid" --dry-run 2>/dev/null; then
+  if "$MAC" mail "$verb" "$UNKNOWN" --dry-run 2>/dev/null; then
     echo "smoke: $verb of an unknown id should fail" >&2; exit 1
   fi
 done
 "$MAC" mail open "<smoke+1@example.com>" --dry-run | grep -q "message://%3Csmoke%2B1@example.com%3E"
+if "$MAC" mail copy "$UNKNOWN" --to Archive --dry-run 2>/dev/null; then
+  echo "smoke: copy of an unknown id should fail" >&2; exit 1
+fi
+if "$MAC" mail label add "$UNKNOWN" Receipts --dry-run 2>/dev/null; then
+  echo "smoke: label add of an unknown id should fail" >&2; exit 1
+fi
+if "$MAC" mail label remove "$UNKNOWN" Receipts 2>/dev/null; then
+  echo "smoke: label remove should always refuse" >&2; exit 1
+fi
 "$MAC" mail draft --to "smoke@example.com" --subject "mac-cli smoke draft — safe to close" --body "Created by scripts/smoke.sh; close this window." --quiet
 printf 'smoke attachment\n' > "${TMPDIR:-/tmp}/mac-cli-smoke.txt"
 "$MAC" mail send --to "smoke@example.com" --markdown "**smoke**" --attach "${TMPDIR:-/tmp}/mac-cli-smoke.txt" --dry-run --json | json_field html | grep -q "<strong>smoke</strong>"

@@ -280,7 +280,7 @@ enum MailScripts {
     }
 
     /// One message to act on: its numeric id, its own mailbox path, and the
-    /// destination path of a move, or the Trash a delete lands in.
+    /// destination path of a move or copy, or the Trash a delete lands in.
     struct ActionTarget: Equatable {
         let rowID: Int64
         let mailbox: String
@@ -358,6 +358,7 @@ enum MailScripts {
         case .unflag: return "set flagged status of msg to false"
         case .archive, .move: return "move msg to \(destination ?? "missing value")"
         case .delete: return "delete msg"
+        case .copy, .addLabel: return "duplicate msg to \(destination ?? "missing value")"
         }
     }
 

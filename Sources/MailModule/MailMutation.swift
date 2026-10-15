@@ -10,6 +10,11 @@ public enum MailMutation: Equatable {
     case move(to: String)
     /// Mail's own Delete, which moves the message to its account's Trash.
     case delete
+    /// A copy in another mailbox of the same account. On Gmail, where a
+    /// mailbox is a label, this adds the label.
+    case copy(to: String)
+    /// `copy` for Gmail accounts only, named for what it does there.
+    case addLabel(String)
 
     var verb: String {
         switch self {
@@ -20,6 +25,8 @@ public enum MailMutation: Equatable {
         case .archive: return "archive"
         case .move: return "move"
         case .delete: return "delete"
+        case .copy: return "copy"
+        case .addLabel: return "label add"
         }
     }
 
@@ -30,25 +37,27 @@ public enum MailMutation: Equatable {
     /// Whether the index shows the change on `target`, given every live
     /// copy of its Message-ID and their Gmail labels. A move leaves the
     /// source row and reappears in the destination, possibly under a new
-    /// row id.
+    /// row id. A copy only has to appear there, as a row or a Gmail label:
+    /// `targets` refuses a destination that already holds the message.
     func isVisible(on target: MailTarget, in copies: [IndexedMessage],
                    labels: [Int64: [IndexMailbox]]) -> Bool {
         let row = copies.first { $0.rowID == target.message.rowID }
+        let arrived = target.destination.map { destination in
+            copies.contains { copy in
+                copy.mailbox.rowID == destination.rowID
+                    || (labels[copy.rowID] ?? []).contains { $0.rowID == destination.rowID }
+            }
+        } ?? false
+        let left = !copies.contains {
+            $0.rowID == target.message.rowID && $0.mailbox.rowID == target.message.mailbox.rowID
+        }
         switch self {
         case .markRead: return row?.isRead == true
         case .markUnread: return row?.isRead == false
         case .flag: return row?.isFlagged == true
         case .unflag: return row?.isFlagged == false
-        case .archive, .move, .delete:
-            guard let destination = target.destination else { return false }
-            let left = !copies.contains {
-                $0.rowID == target.message.rowID && $0.mailbox.rowID == target.message.mailbox.rowID
-            }
-            let arrived = copies.contains { copy in
-                copy.mailbox.rowID == destination.rowID
-                    || (labels[copy.rowID] ?? []).contains { $0.rowID == destination.rowID }
-            }
-            return left && arrived
+        case .archive, .move, .delete: return left && arrived
+        case .copy, .addLabel: return arrived
         }
     }
 }

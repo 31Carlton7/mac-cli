@@ -102,9 +102,14 @@ struct TargetOptions: ParsableArguments {
     @Option(help: "Only the copy in this mailbox (full path, e.g. Inbox or Archive), when a message is in several.") var mailbox: String?
     @Flag(help: "Print the resolved messages without changing anything.") var dryRun = false
 
-    /// Prints the receipt, then exits non-zero if any id was not changed.
     /// `scan` reaches only mark-read and archive, which can run without the index.
     func run(_ mutation: MailMutation, scan: Int? = nil, output: OutputOptions) async {
+        await Self.run(mutation, ids: ids, account: account, mailbox: mailbox, dryRun: dryRun,
+                       scan: scan, output: output)
+    }
+
+    static func run(_ mutation: MailMutation, ids: [String], account: String?, mailbox: String?,
+                    dryRun: Bool, scan: Int? = nil, output: OutputOptions) async {
         await withErrorHandling(json: output.json) {
             let results = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
                 .apply(mutation, ids: ids, account: account, mailbox: mailbox, dryRun: dryRun, scan: scan)
@@ -115,13 +120,30 @@ struct TargetOptions: ParsableArguments {
     }
 }
 
+/// `label add` and `label remove` take the ids, then the label, all positional.
+struct LabelArguments: ParsableArguments {
+    @Argument(help: "One or more message ids, then the Gmail label (its mailbox path, e.g. Receipts or Clients/Acme).") var values: [String]
+    @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
+    @Option(help: "Only the copy in this mailbox (full path), when a message is in several.") var mailbox: String?
+    @Flag(help: "Print the resolved messages without changing anything.") var dryRun = false
+
+    var ids: [String] { Array(values.dropLast()) }
+    var label: String { values.last ?? "" }
+
+    func validate() throws {
+        guard values.count >= 2 else {
+            throw ValidationError("Give at least one message id, then the label.")
+        }
+    }
+}
+
 public struct MailCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "mail",
         abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, List.self, Wait.self, Watch.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
-                      Archive.self, Move.self, Delete.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
+                      Archive.self, Move.self, Copy.self, Label.self, Delete.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
     )
 
     public init() {}
@@ -564,7 +586,8 @@ public struct MailCommand: AsyncParsableCommand {
 
                 --to names a mailbox by full path, or by its last component when \
                 only one mailbox of the account has it. Gmail is refused: a Gmail \
-                mailbox is a label, and mac does not change labels yet.
+                mailbox is a label, and a scripted move can leave the old label \
+                on the server. Use mac mail label add to add one.
                 """
         )
 
@@ -575,6 +598,89 @@ public struct MailCommand: AsyncParsableCommand {
         func run() async {
             await target.run(.move(to: to), output: output)
         }
+    }
+
+    struct Copy: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Copy messages to another mailbox of their own account, by exact id. On Gmail this adds a label.",
+            discussion: MailCommand.actionDiscussion("copy", extra: "--to Projects") + """
+
+
+                --to names a mailbox as for move. The original stays where it \
+                is. A mailbox that already holds the message is refused, and so \
+                are Trash and Junk. On Gmail, where Mail keeps each message once \
+                in All Mail, the copy is a new label and verified as one.
+                """
+        )
+
+        @Option(help: "Destination mailbox, looked up in each message's account.") var to: String
+        @OptionGroup var target: TargetOptions
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await target.run(.copy(to: to), output: output)
+        }
+    }
+
+    struct Label: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Add Gmail labels by exact message id.",
+            subcommands: [LabelAdd.self, LabelRemove.self]
+        )
+    }
+
+    struct LabelAdd: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "add",
+            abstract: "Add a Gmail label to messages, by exact id.",
+            discussion: """
+                Mail adds a Gmail label by copying the message into the label's \
+                mailbox, so this is mac mail copy for Gmail accounts only. The \
+                label is a mailbox path of the message's account, as for move, \
+                and must already exist. A message that has the label is refused.
+
+                JSON: {"results":[{"id","account","mailbox","to","status","verified"}]}. \
+                Exits 1 if any id was not changed.
+
+                Examples:
+                  mac mail label add <id> Receipts --dry-run
+                  mac mail label add <id> <id> Clients/Acme --json
+                """
+        )
+
+        @OptionGroup var arguments: LabelArguments
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await TargetOptions.run(.addLabel(arguments.label), ids: arguments.ids,
+                                    account: arguments.account, mailbox: arguments.mailbox,
+                                    dryRun: arguments.dryRun, output: output)
+        }
+    }
+
+    struct LabelRemove: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "remove",
+            abstract: "Refused: mac cannot remove a Gmail label without risking the message.",
+            discussion: """
+                Always exits 1 without touching Mail. Mail's scripting has no \
+                label command. Removing a label means a scripted move out of the \
+                label's mailbox, which can leave the label on the server, or \
+                Mail's Delete there, which moves the message to Trash. Remove \
+                labels in Mail or on the web.
+                """
+        )
+
+        @OptionGroup var arguments: LabelArguments
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                throw MacError(.badInput, Self.refusal)
+            }
+        }
+
+        static let refusal = "mac cannot remove a Gmail label: Mail has no command for it, a scripted move out of the label can leave it on the server, and Mail's Delete there moves the message to Trash. Remove it in Mail."
     }
 
     struct Delete: AsyncParsableCommand {

@@ -297,7 +297,8 @@ public struct IndexMailStore {
             out.append(MailTarget(account: owner, message: message, destination: try Self.destination(
                 for: mutation, target: target, labels: labels[message.rowID] ?? [],
                 storesLabels: Self.storesLabels(accountMailboxes) || labels[message.rowID] != nil,
-                mailboxes: accountMailboxes)))
+                mailboxes: accountMailboxes,
+                holding: copies.map(\.mailbox) + copies.flatMap { labels[$0.rowID] ?? [] })))
         }
         return out
     }
@@ -374,10 +375,12 @@ public struct IndexMailStore {
         return done
     }
 
-    /// Where a move sends `target`, or nil for a change that stays put.
-    /// `labels` are the Gmail label mailboxes the message carries.
+    /// Where a move or copy sends `target`, or nil for a change that stays
+    /// put. `labels` are the Gmail label mailboxes the message carries, and
+    /// `holding` every mailbox any copy of it is in, by row or label.
     static func destination(for mutation: MailMutation, target: MailTarget, labels: [IndexMailbox],
-                            storesLabels: Bool, mailboxes: [IndexMailbox]) throws -> IndexMailbox? {
+                            storesLabels: Bool, mailboxes: [IndexMailbox],
+                            holding: [IndexMailbox]) throws -> IndexMailbox? {
         let id = target.message.messageID
         let account = target.account.name
         let destination: IndexMailbox
@@ -404,7 +407,7 @@ public struct IndexMailStore {
             // A Gmail mailbox is a label: moving means removing one label and
             // adding another, and a scripted move acts on the All Mail copy.
             if storesLabels {
-                throw MacError(.badInput, "Message \(id) is in Gmail account '\(account)', where a mailbox is a label. mac does not change Gmail labels yet; move it in Mail.")
+                throw MacError(.badInput, "Message \(id) is in Gmail account '\(account)', where a mailbox is a label. Add one with: mac mail label add \(id) <label>. mac cannot remove a label, so move it in Mail.")
             }
             destination = try mailbox(named: name, in: mailboxes, account: account)
         case .delete:
@@ -420,6 +423,22 @@ public struct IndexMailStore {
                 throw MacError(.badInput, "Message \(id) is already in \(trash.path). mac never erases mail.")
             }
             destination = trash
+        case .copy(let name), .addLabel(let name):
+            if case .addLabel = mutation, !storesLabels {
+                throw MacError(.badInput, "Message \(id) is in account '\(account)', which is not Gmail and has no labels. Copy it with: mac mail copy \(id) --to \(name)")
+            }
+            destination = try mailbox(named: name, in: mailboxes, account: account)
+            // A copy in Trash or Junk is a delete or a junk mark with a copy
+            // left behind; those have their own commands.
+            if destination.isTrashOrJunk {
+                throw MacError(.badInput, "\(destination.path) is the Trash or Junk mailbox of '\(account)'. Use mac mail delete or mac mail move instead.")
+            }
+            // A second copy could not be told apart from the first, so the
+            // result could never be verified.
+            let inInbox = destination.isInbox && target.message.isInInbox
+            if inInbox || holding.contains(where: { $0.rowID == destination.rowID }) {
+                throw MacError(.badInput, "Message \(id) is already in \(destination.path).")
+            }
         }
         guard destination.rowID != target.message.mailbox.rowID else {
             throw MacError(.badInput, "Message \(id) is already in \(destination.path).\(mutation == .delete ? " mac never erases mail." : "")")

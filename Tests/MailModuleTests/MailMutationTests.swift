@@ -26,7 +26,8 @@ func statusLines(_ lines: String...) -> String {
 
 final class MailMutationTests: XCTestCase {
     static let everyMutation: [MailMutation] = [.markRead, .markUnread, .flag, .unflag,
-                                                .archive, .move(to: "Archive"), .delete]
+                                                .archive, .move(to: "Archive"), .delete,
+                                                .copy(to: "Archive"), .addLabel("Receipts")]
 
     lazy var path = EnvelopeIndexFixture.make()
     let mail = FakeDirectory()
@@ -629,6 +630,156 @@ final class MailMutationTests: XCTestCase {
         XCTAssertEqual(results.map(\.verified), [true])
     }
 
+    // MARK: - Copy and Gmail labels
+
+    /// A Gmail user label, and the archived message 102 that carries none.
+    func addGmailLabel() {
+        update("INSERT INTO mailboxes (ROWID, url) VALUES (11, 'imap://GM/Receipts'), (12, 'imap://GM/Clients/Acme');")
+    }
+
+    func testCopyFindsTheMailboxInEachMessagesOwnAccount() async throws {
+        let results = try await actions().apply(.copy(to: "archive"), ids: ["q-inv@example.com", "read@example.com"],
+                                                dryRun: true)
+        XCTAssertEqual(results.map(\.status), [.dryRun, .dryRun])
+        XCTAssertEqual(results.map(\.to), ["Archive", "Archive"])
+        XCTAssertEqual(results.map(\.account), ["Work", "Home"])
+        XCTAssertTrue(runner.scripts.isEmpty)
+    }
+
+    func testCopyIntoAMailboxThatHoldsTheMessageIsRefused() async {
+        addGmailLabel()
+        let cases: [(String, String, String?)] = [
+            ("q-inv@example.com", "Inbox", nil),
+            // The Inbox copy is picked, but another copy is already in Archive.
+            ("dup@example.com", "Archive", "Inbox"),
+            // Gmail: All Mail holds every message, and labels are mailboxes.
+            ("inv-1042@example.com", "[Gmail]/All Mail", nil),
+            ("inv-1042@example.com", "[Gmail]/Sent Mail", nil),
+            ("inv-1042@example.com", "INBOX", nil),
+        ]
+        for (id, to, mailbox) in cases {
+            let error = await expectError(.badInput) {
+                _ = try await self.actions().apply(.copy(to: to), ids: [id], mailbox: mailbox, dryRun: true)
+            }
+            XCTAssertTrue(error?.message.contains("already in") == true, "\(id) -> \(to): \(error?.message ?? "")")
+        }
+        XCTAssertTrue(runner.scripts.isEmpty)
+    }
+
+    func testCopyIntoTrashOrJunkIsRefused() async {
+        update("INSERT INTO mailboxes (ROWID, url) VALUES (45, 'ews://EX/Junk%20Email');")
+        for to in ["Deleted Items", "Junk Email"] {
+            _ = await expectError(.badInput) {
+                _ = try await self.actions().apply(.copy(to: to), ids: ["q-inv@example.com"], dryRun: true)
+            }
+        }
+        _ = await expectError(.badInput) {
+            _ = try await self.actions().apply(.addLabel("[Gmail]/Trash"), ids: ["inv-arch@example.com"], dryRun: true)
+        }
+    }
+
+    func testCopyToAnUnknownMailboxIsNotFound() async {
+        _ = await expectError(.notFound) {
+            _ = try await self.actions().apply(.copy(to: "Nowhere"), ids: ["q-inv@example.com"])
+        }
+        XCTAssertTrue(runner.scripts.isEmpty)
+    }
+
+    func testCopyDuplicatesAfterCheckingBothMailboxes() throws {
+        let script = MailScripts.act(.copy(to: "Archive"), accountID: "EX", targets: [
+            .init(rowID: 104, mailbox: "Inbox", destination: "Archive"),
+        ])
+        let checks = try XCTUnwrap(script.range(of: "get name of mb2"))
+        let copy = try XCTUnwrap(script.range(of: "duplicate msg to mb2"))
+        XCTAssertLessThan(checks.lowerBound, copy.lowerBound)
+        XCTAssertTrue(script.contains("«class mssg» id 104 of mb1"))
+        XCTAssertFalse(script.contains("move msg"), "a copy never moves the original")
+        XCTAssertFalse(script.contains("delete msg"))
+    }
+
+    func testLabelNamesAreEscaped() {
+        let script = MailScripts.act(.addLabel(#"Say "hi"\now"#), accountID: "GM", targets: [
+            .init(rowID: 102, mailbox: "[Gmail]/All Mail", destination: #"Say "hi"\now"#),
+        ])
+        XCTAssertTrue(script.contains(#"mailbox "Say \"hi\"\\now" of acct"#), script)
+        XCTAssertTrue(script.contains(#"mailbox "[Gmail]/All Mail" of acct"#))
+    }
+
+    func testCopyIsVerifiedByANewRowInTheDestination() async throws {
+        runner.reply = { [self] _ in
+            update("INSERT INTO messages (ROWID, global_message_id, subject, date_received, mailbox) VALUES (140, 4, 4, 1787961300, 6);")
+            return statusLine(104, "ok")
+        }
+        let results = try await actions().apply(.copy(to: "Archive"), ids: ["q-inv@example.com"])
+        XCTAssertEqual(results.map(\.status), [.ok])
+        XCTAssertEqual(results.map(\.verified), [true], "the original staying put is expected")
+        XCTAssertTrue(runner.scripts[0].contains("duplicate msg to mb2"))
+    }
+
+    func testCopyStaysUnverifiedUntilTheCopyShows() async throws {
+        runner.reply = { _ in statusLine(104, "ok") }
+        let results = try await actions().apply(.copy(to: "Archive"), ids: ["q-inv@example.com"])
+        XCTAssertEqual(results.map(\.verified), [false])
+    }
+
+    func testGmailCopyAndLabelAddAreVerifiedByANewLabelRow() async throws {
+        addGmailLabel()
+        for mutation in [MailMutation.copy(to: "Receipts"), .addLabel("clients/acme")] {
+            let destination: Int64 = mutation == .copy(to: "Receipts") ? 11 : 12
+            runner.reply = { _ in statusLine(102, "ok") }
+            let before = try await actions().apply(mutation, ids: ["inv-arch@example.com"])
+            XCTAssertEqual(before.map(\.verified), [false], "\(mutation) before the label row")
+            runner.reply = { [self] _ in
+                update("INSERT INTO labels (message_id, mailbox_id) VALUES (102, \(destination));")
+                return statusLine(102, "ok")
+            }
+            let after = try await actions().apply(mutation, ids: ["inv-arch@example.com"])
+            XCTAssertEqual(after.map(\.verified), [true], "\(mutation) after the label row")
+            XCTAssertTrue(runner.scripts.last?.contains(#"mailbox "[Gmail]/All Mail" of acct"#) == true)
+            update("DELETE FROM labels WHERE message_id = 102;")
+        }
+    }
+
+    func testALabelOnAnotherMessageNeverVerifiesTheCopy() async throws {
+        addGmailLabel()
+        runner.reply = { [self] _ in
+            update("INSERT INTO labels (message_id, mailbox_id) VALUES (101, 11);")
+            return statusLine(102, "ok")
+        }
+        let results = try await actions().apply(.addLabel("Receipts"), ids: ["inv-arch@example.com"])
+        XCTAssertEqual(results.map(\.verified), [false])
+    }
+
+    func testLabelAddRefusesAnAccountWithoutLabels() async {
+        let error = await expectError(.badInput) {
+            _ = try await self.actions().apply(.addLabel("Archive"), ids: ["q-inv@example.com"], dryRun: true)
+        }
+        XCTAssertTrue(error?.message.contains("mac mail copy") == true, error?.message ?? "")
+    }
+
+    func testLabelAddNeedsAnExistingLabel() async {
+        _ = await expectError(.notFound) {
+            _ = try await self.actions().apply(.addLabel("Receipts"), ids: ["inv-arch@example.com"], dryRun: true)
+        }
+    }
+
+    func testLabelAddReportsEachIDOfOneScript() async throws {
+        addGmailLabel()
+        runner.reply = { _ in statusLines(statusLine(102, "ok"), statusLine(101, "failed", "Mail got an error")) }
+        let results = try await actions().apply(.addLabel("Receipts"), ids: ["inv-arch@example.com", "inv-1042@example.com"])
+        XCTAssertEqual(results.map(\.status), [.ok, .failed])
+        XCTAssertEqual(results.map(\.to), ["Receipts", "Receipts"])
+        XCTAssertEqual(results[1].detail, "Mail got an error")
+        XCTAssertNotNil(MailActionReceipt(results: results).failure)
+    }
+
+    func testGmailMoveRefusalPointsAtLabelAdd() async {
+        let error = await expectError(.badInput) {
+            _ = try await self.actions().apply(.move(to: "Receipts"), ids: ["inv-1042@example.com"], dryRun: true)
+        }
+        XCTAssertTrue(error?.message.contains("mac mail label add") == true, error?.message ?? "")
+    }
+
     // MARK: - Without the index
 
     func testAnUnreadableIndexFallsBackToTheWindowsWithANotice() async throws {
@@ -654,7 +805,8 @@ final class MailMutationTests: XCTestCase {
             _ = try await actions.apply(.markRead, ids: ["w1"], mailbox: "Archive")
         }
         notices = []
-        for mutation in [MailMutation.markUnread, .flag, .unflag, .move(to: "Archive"), .delete] {
+        for mutation in [MailMutation.markUnread, .flag, .unflag, .move(to: "Archive"), .delete,
+                         .copy(to: "Archive"), .addLabel("Receipts")] {
             _ = await expectError(.permissionDenied) {
                 _ = try await actions.apply(mutation, ids: ["w1"], dryRun: true)
             }

@@ -54,4 +54,13 @@ final class MailScriptsCompileTests: XCTestCase {
             }
         }
     }
+
+    func testCopyAndLabelScriptsCompile() {
+        for name in hostileNames {
+            let targets = [MailScripts.ActionTarget(rowID: 7, mailbox: "[Gmail]/All Mail", destination: name)]
+            for mutation in [MailMutation.copy(to: name), .addLabel(name)] {
+                assertCompiles(MailScripts.act(mutation, accountID: name, targets: targets), "act \(mutation) \(name)")
+            }
+        }
+    }
 }

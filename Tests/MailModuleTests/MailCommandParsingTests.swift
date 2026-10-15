@@ -242,4 +242,28 @@ final class MailCommandParsingTests: XCTestCase {
 
         XCTAssertEqual(capturedURL?.absoluteString, "message://%3Cm1%2Bx@example.com%3E")
     }
+
+    func testCopyTakesSeveralIDsAndTo() throws {
+        let copy = try XCTUnwrap(try MailCommand.parseAsRoot(["copy", "a@x", "b@x", "--to", "Archive", "--dry-run"])
+                                 as? MailCommand.Copy)
+        XCTAssertEqual(copy.target.ids, ["a@x", "b@x"])
+        XCTAssertEqual(copy.to, "Archive")
+        XCTAssertThrowsError(try MailCommand.parseAsRoot(["copy", "a@x"]), "copy needs --to")
+        XCTAssertThrowsError(try MailCommand.parseAsRoot(["copy", "a@x", "--to", "X", "--scan", "50"]))
+    }
+
+    func testLabelTakesTheIDsThenTheLabel() throws {
+        let add = try XCTUnwrap(try MailCommand.parseAsRoot(["label", "add", "a@x", "<b@x>", "Clients/Acme",
+                                                             "--account", "Personal", "--dry-run"])
+                                as? MailCommand.LabelAdd)
+        XCTAssertEqual(add.arguments.ids, ["a@x", "<b@x>"])
+        XCTAssertEqual(add.arguments.label, "Clients/Acme")
+        XCTAssertEqual(add.arguments.account, "Personal")
+        XCTAssertTrue(add.arguments.dryRun)
+        for verb in ["add", "remove"] {
+            XCTAssertThrowsError(try MailCommand.parseAsRoot(["label", verb, "a@x"]), "\(verb) needs an id and a label")
+        }
+        XCTAssertNoThrow(try MailCommand.parseAsRoot(["label", "remove", "a@x", "Receipts"]))
+        XCTAssertTrue(MailCommand.LabelRemove.refusal.contains("Trash"))
+    }
 }
