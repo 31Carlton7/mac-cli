@@ -15,6 +15,9 @@ final class MockMailStore: MailStore {
     var sent: [MailDraft] = []
     var markedReadIDs: [String] = []
     var archivedIDs: [String] = []
+    /// Bodies by Mail's numeric id, for the by-id lookup.
+    var bodies: [Int64: String] = [:]
+    var bodyLookups: [String] = []
 
     private func gate() throws {
         if !accessGranted {
@@ -47,6 +50,12 @@ final class MockMailStore: MailStore {
         try gate()
         queried.append(account)
         return windowSlice(account, scan).first { $0.id == id }
+    }
+
+    func body(rowID: Int64, accountID: String, mailbox: String) async throws -> String? {
+        try gate()
+        bodyLookups.append("\(accountID) \(mailbox) \(rowID)")
+        return bodies[rowID]
     }
 
     func markRead(id: String, account: String, scan: Int) async throws -> Bool {

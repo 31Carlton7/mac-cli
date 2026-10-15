@@ -35,6 +35,7 @@ mac contacts find "Sarah"
 mac mail accounts
 mac mail unread --limit 10
 mac mail search "invoice"
+mac mail read <id>
 mac mail draft --to a@b.com --subject "Hi" --body "..."
 mac messages history +15551234567
 mac messages send +15551234567 "Running 10 min late"
@@ -73,7 +74,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
-- Mail message ids are the RFC Message-ID without angle brackets. Items read from Mail's Envelope Index also carry `mailbox`, `to`, `cc`, `isFlagged` and `hasAttachments`; a key appears only when its value is known.
+- Mail message ids are the RFC Message-ID without angle brackets. Items read from Mail's Envelope Index also carry `mailbox`, `to`, `cc`, `isFlagged` and `hasAttachments`, and `mac mail read` adds `attachments` (`name`, `mimeType`, `size`, `isExternal`) when it decoded the message file; a key appears only when its value is known.
 - Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
 - `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
 - `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
@@ -91,7 +92,8 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **`mac mail unread` and `search` read Mail's Envelope Index** (`~/Library/Mail/V*/MailData/Envelope Index`), which needs Full Disk Access. They see every message Mail has downloaded, in every account including Exchange. `unread` is the newest `--limit` unread inbox messages across all enabled accounts. `search` matches subject, sender, and Mail's summary in every mailbox except Trash and Junk, and lists a message copied into several mailboxes once. Matching is case-insensitive for ASCII letters only. `--scan` is ignored on this path.
 - **A message without a Message-ID header is listed with an empty `id`** (`(no Message-ID)` in human output). mac does not invent one, so such a message cannot be read or acted on by id.
 - **Mail's account list is cached** in `~/Library/Caches/mac-cli/mail-accounts.json`, keyed to a fingerprint of the system account store (`~/Library/Accounts/Accounts4.sqlite`), so a read with a warm cache makes no Mail.app call. Adding, removing, renaming or toggling an account changes the store, and the next read asks Mail.app again. An `--account` name the cache does not know is checked with Mail.app before it is reported missing. Without Full Disk Access to the account store, every read asks Mail.app, as before. `--no-cache` on `unread`, `search`, `read` and `accounts` skips the cache; `mark-read` and `archive` always ask Mail.app.
-- **Without the index, Mail reads are windowed.** When the index is unreadable, `unread` and `search` fall back to Mail.app with a warning, and `read`, `mark-read` and `archive` always work this way for now: each examines only the newest `--scan` messages (default 30) of each account's inbox. A message older than that window is invisible — raise `--scan` (max 500) to look further back. In this mode `unread` without `--account` is a fast sample, not a global newest-N, and search matches subject/sender only. AppleScript's `whose` filtering, which would search the whole mailbox, is unusable: on a 97k-message unified inbox it pins Mail.app at 98% CPU indefinitely.
+- **`mac mail read` decodes the message file** (`.emlx` under `~/Library/Mail/V*`) for a message in any mailbox of any account, so it reaches mail no inbox window would. A message copied into several mailboxes is read from its inbox copy, then the newest. The body is the text/plain part when there is one, otherwise readable text from the HTML with link URLs kept, so it is often longer than what Mail.app shows. When the file is missing or does not decode, `read` asks Mail.app for that one message by its numeric id, with a warning. An id the index does not have is `notFound`.
+- **Without the index, Mail reads are windowed.** When the index is unreadable, `unread`, `search` and `read` fall back to Mail.app with a warning, and `mark-read` and `archive` always work this way for now: each examines only the newest `--scan` messages (default 30) of each account's inbox. A message older than that window is invisible — raise `--scan` (max 500) to look further back. In this mode `unread` without `--account` is a fast sample, not a global newest-N, and search matches subject/sender only. AppleScript's `whose` filtering, which would search the whole mailbox, is unusable: on a 97k-message unified inbox it pins Mail.app at 98% CPU indefinitely.
 - **Windowed reads on large mailboxes are slow.** Cost scales with messages touched: roughly 0.15s/message on a 1.7k-message account and ~1.5s/message on a 50k-message one. Keep `--scan` small on big accounts.
 - Mail search has no body search.
 - Mail composition is plain-text; no attachments.

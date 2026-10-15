@@ -7,6 +7,8 @@ import SQLite3
 /// `ews://<accountId>/<path>` for Exchange, with the path percent-encoded.
 public struct IndexMailbox: Equatable {
     public let rowID: Int64
+    /// As the index stores it, e.g. `imap://<accountId>/%5BGmail%5D/All%20Mail`.
+    public let url: String
     public let accountID: String
     /// Decoded, e.g. `INBOX`, `Inbox`, `[Gmail]/All Mail`, `Sent Items`.
     public let path: String
@@ -34,6 +36,7 @@ public struct IndexMailbox: Equatable {
         guard let slash = rest.firstIndex(of: "/") else { return nil }
         let encodedPath = String(rest[rest.index(after: slash)...])
         self.rowID = rowID
+        self.url = url
         self.accountID = String(rest[..<slash])
         self.path = encodedPath.removingPercentEncoding ?? encodedPath
         self.totalCount = totalCount

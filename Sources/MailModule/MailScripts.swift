@@ -193,6 +193,31 @@ enum MailScripts {
         """
     }
 
+    /// The body of one message, by Mail's numeric id, from the mailbox that
+    /// holds it (the index's URL path, such as `[Gmail]/All Mail`). A direct
+    /// reference, so the cost does not grow with the mailbox. `«class mssg»`
+    /// spells `message` because `message id` parses as the RFC id property.
+    /// Emits `BODY:` and the body, or `NOTFOUND`.
+    static func body(rowID: Int64, accountID: String, mailbox: String) -> String {
+        """
+        tell application "Mail"
+            with timeout of 600 seconds
+                try
+                    set msg to «class mssg» id \(rowID) of mailbox "\(AppleScript.escape(mailbox))" of account id "\(AppleScript.escape(accountID))"
+                    get id of msg
+                on error number -1728
+                    return "NOTFOUND"
+                end try
+                set bodyVal to ""
+                try
+                    set bodyVal to (content of msg) as text
+                end try
+            end timeout
+        end tell
+        return "BODY:" & bodyVal
+        """
+    }
+
     static func markRead(account: String, id: String, scan: Int) -> String {
         """
         \(prologue)

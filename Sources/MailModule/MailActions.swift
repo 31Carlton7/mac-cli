@@ -3,7 +3,7 @@ import Foundation
 
 public struct MailActions {
     let store: MailStore
-    /// Answers `unread`, `search` and `accounts` when Mail's Envelope Index is
+    /// Answers `unread`, `search`, `read` and `accounts` when Mail's Envelope Index is
     /// readable. Without it, or when the index is unavailable, every read
     /// goes through `store`'s Mail.app windows.
     let index: IndexMailStore?
@@ -66,12 +66,40 @@ public struct MailActions {
         return Self.newestFirst(collected, limit: limit)
     }
 
-    public func read(id: String, scan: Int = MailActions.defaultScan) async throws -> EmailItem {
-        try validate(scan: scan)
+    /// From the index and the message's file. A message the index knows but
+    /// whose file cannot be read comes from Mail.app by its numeric id; one the
+    /// index does not know is not found, never a window scan.
+    public func read(id: String, scan: Int? = nil) async throws -> EmailItem {
+        if let scan { try validate(scan: scan) }
+        if let index {
+            do {
+                let item: EmailItem
+                do {
+                    item = try await index.read(id: id)
+                } catch let unreadable as IndexMailStore.FileUnreadable {
+                    notice(Self.readingBodyFromMail(unreadable.error))
+                    item = try await bodyFromMail(unreadable)
+                }
+                if scan != nil { notice(Self.scanIgnored) }
+                return item
+            } catch let unavailable as EnvelopeIndex.Unavailable {
+                notice(Self.fallingBack(unavailable.error))
+            }
+        }
+        let scan = scan ?? Self.defaultScan
         for name in try await orderedAccounts() {
             if let item = try await store.find(id: id, account: name, scan: scan) { return item }
         }
         throw Self.outsideWindow(id: id, scan: scan)
+    }
+
+    private func bodyFromMail(_ unreadable: IndexMailStore.FileUnreadable) async throws -> EmailItem {
+        let message = unreadable.message
+        guard let body = try await store.body(rowID: message.rowID, accountID: message.mailbox.accountID,
+                                              mailbox: message.mailbox.path) else {
+            throw MacError(.notFound, "Mail has no message \(message.rowID) in \(message.mailbox.path), though its Envelope Index lists it. Mail may still be updating; retry, or run: mac mail unread")
+        }
+        return IndexMailStore.item(message, accounts: unreadable.accounts, body: body)
     }
 
     public func markRead(id: String, scan: Int = MailActions.defaultScan) async throws {
@@ -127,6 +155,10 @@ public struct MailActions {
     }
 
     static let scanIgnored = "note: --scan is ignored: Mail's Envelope Index covers every message."
+
+    static func readingBodyFromMail(_ error: MacError) -> String {
+        "warning: reading this message's body through Mail.app. \(error.message)"
+    }
 
     static func fallingBack(_ error: MacError) -> String {
         "warning: reading through Mail.app, which sees only the newest --scan messages of each inbox. \(error.message)"

@@ -36,6 +36,13 @@ public final class AppleScriptMailStore: MailStore {
         return Self.emails(from: out, bodyField: true).first
     }
 
+    public func body(rowID: Int64, accountID: String, mailbox: String) async throws -> String? {
+        let out = try await AppleScript.run(MailScripts.body(rowID: rowID, accountID: accountID, mailbox: mailbox),
+                                            targetName: "Mail")
+        guard out.hasPrefix("BODY:") else { return nil }
+        return String(out.dropFirst("BODY:".count))
+    }
+
     public func markRead(id: String, account: String, scan: Int) async throws -> Bool {
         let out = try await AppleScript.run(MailScripts.markRead(account: account, id: id, scan: scan),
                                             targetName: "Mail")

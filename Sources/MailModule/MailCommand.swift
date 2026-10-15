@@ -101,11 +101,25 @@ public struct MailCommand: AsyncParsableCommand {
 
     struct Read: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Show a message including its plain-text body, by exact id."
+            abstract: "Show a message including its plain-text body, by exact id.",
+            discussion: """
+                Finds the message in Mail's Envelope Index, in any mailbox of any \
+                account, and decodes its body from Mail's message file without \
+                opening Mail.app windows. A message copied into several mailboxes \
+                is read from its inbox copy. When the file is missing or cannot be \
+                decoded, the body comes from Mail.app, with a warning.
+
+                When the index is unreadable (see: mac doctor) it falls back to \
+                Mail.app, which finds the message only within the newest --scan \
+                messages of each inbox.
+
+                Example:
+                  mac mail read "<id>" --json
+                """
         )
 
-        @Argument(help: "Message id from 'mac mail unread' or 'mac mail search'.") var id: String
-        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
+        @Argument(help: "Message id from 'mac mail unread' or 'mac mail search', with or without angle brackets.") var id: String
+        @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var accountCache: AccountCacheOptions
         @OptionGroup var output: OutputOptions
 

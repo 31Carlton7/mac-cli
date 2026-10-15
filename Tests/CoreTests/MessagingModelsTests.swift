@@ -26,6 +26,15 @@ final class MessagingModelsTests: XCTestCase {
         XCTAssertEqual(json, #"{"account":"A","date":"2026-08-27T10:00:00Z","from":"f","hasAttachments":false,"id":"m1@x","isFlagged":true,"isRead":true,"mailbox":"Inbox","subject":"s","to":["b@c.com"]}"#)
     }
 
+    func testEmailItemAttachmentsAreListedOnlyWhenKnown() throws {
+        let email = EmailItem(id: "m1@x", subject: "s", from: "f", date: when,
+                              isRead: true, account: "A", body: "b",
+                              attachments: [EmailAttachment(name: "a.pdf", mimeType: "application/pdf", size: 12, isExternal: false),
+                                            EmailAttachment(name: nil, mimeType: "image/png", size: 3, isExternal: true)])
+        let json = String(data: try Output.encoder.encode(email), encoding: .utf8)!
+        XCTAssertEqual(json, #"{"account":"A","attachments":[{"isExternal":false,"mimeType":"application\/pdf","name":"a.pdf","size":12},{"isExternal":true,"mimeType":"image\/png","size":3}],"body":"b","date":"2026-08-27T10:00:00Z","from":"f","id":"m1@x","isRead":true,"subject":"s"}"#)
+    }
+
     func testMessageItemJSONSchema() throws {
         let message = MessageItem(id: "g1", chat: "+15551234567", sender: "+15551234567",
                                   text: "hey", date: when, isFromMe: false)

@@ -66,6 +66,34 @@ final class EmlxLiveStoreTests: XCTestCase {
         print(report.joined(separator: "\n"))
     }
 
+    /// The Mail.app fallback of `read`: one message by its numeric id, from
+    /// the mailbox the index names. Read-only. Skipped unless MAC_MAIL_LIVE_BYID=1.
+    func testMailAppFindsTheNewestMessageOfEveryAccountByID() async throws {
+        guard ProcessInfo.processInfo.environment["MAC_MAIL_LIVE_BYID"] == "1" else {
+            throw XCTSkip("Set MAC_MAIL_LIVE_BYID=1 to ask Mail.app for real messages by id.")
+        }
+        let files = try MailMessageFiles.newest()
+        let rows = try newestRows(indexPath: files.root.appendingPathComponent("MailData/Envelope Index").path,
+                                  perAccount: 1)
+        let store = AppleScriptMailStore()
+        var report: [String] = []
+        for (number, (accountID, messages)) in rows.sorted(by: { $0.key < $1.key }).enumerated() {
+            guard let message = messages.first,
+                  let mailbox = IndexMailbox(rowID: 0, url: message.mailboxURL, totalCount: 0) else { continue }
+            let scheme = String(message.mailboxURL.prefix { $0 != ":" })
+            let start = DispatchTime.now()
+            let body = try await store.body(rowID: message.rowID, accountID: accountID, mailbox: mailbox.path)
+            let ms = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e6
+            let missing = try await store.body(rowID: 0, accountID: accountID, mailbox: mailbox.path)
+            XCTAssertNotNil(body, "account-\(number + 1)")
+            XCTAssertNil(missing, "account-\(number + 1): ROWID 0")
+            report.append(String(format: "account-%d (%@): body %@ (%d chars) in %.0f ms; ROWID 0 -> %@",
+                                 number + 1, scheme, body == nil ? "missing" : "found", body?.count ?? 0, ms,
+                                 missing == nil ? "NOTFOUND" : "found"))
+        }
+        print(report.joined(separator: "\n"))
+    }
+
     /// Strips paths, mailbox URLs and numbers so reasons group and leak nothing.
     private func redacted(_ message: String) -> String {
         message.replacingOccurrences(of: "(/|[a-z]+://)\\S+", with: "<path>", options: .regularExpression)

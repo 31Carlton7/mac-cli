@@ -22,6 +22,7 @@ final class MailScriptsTests: XCTestCase {
         let every = Self.allReadScripts + [
             ("composeDraft", MailScripts.compose(draft, send: false)),
             ("composeSend", MailScripts.compose(draft, send: true)),
+            ("body", MailScripts.body(rowID: 101, accountID: "GM", mailbox: "[Gmail]/All Mail")),
         ]
         for (name, script) in every {
             XCTAssertFalse(script.contains("whose"), "\(name) still uses a `whose` filter")
@@ -103,6 +104,25 @@ final class MailScriptsTests: XCTestCase {
         let script = MailScripts.find(account: #"Wo"rk"#, id: #"<m"1@x>"#, scan: 30)
         XCTAssertTrue(script.contains(#"Wo\"rk"#))
         XCTAssertTrue(script.contains(#"<m\"1@x>"#))
+    }
+
+    // MARK: - body
+
+    /// `message id 101` parses as the RFC `message id` property followed by a
+    /// stray number, so the by-id reference spells the class by its code.
+    func testBodyReferencesTheMessageByNumericIDInItsOwnMailbox() {
+        let script = MailScripts.body(rowID: 101, accountID: "GM", mailbox: "[Gmail]/All Mail")
+        XCTAssertTrue(script.contains(#"«class mssg» id 101 of mailbox "[Gmail]/All Mail" of account id "GM""#))
+        XCTAssertTrue(script.contains("on error number -1728"), "only a missing object is NOTFOUND")
+        XCTAssertTrue(script.contains("NOTFOUND"))
+        XCTAssertTrue(script.contains(#"return "BODY:" & bodyVal"#))
+        XCTAssertTrue(script.contains("with timeout of 600 seconds"))
+        XCTAssertFalse(script.contains("messages 1 thru"), "no window")
+    }
+
+    func testBodyEscapesMailboxAndAccount() {
+        let script = MailScripts.body(rowID: 1, accountID: #"G"M"#, mailbox: #"a"b"#)
+        XCTAssertTrue(script.contains(#"mailbox "a\"b" of account id "G\"M""#))
     }
 
     // MARK: - markRead

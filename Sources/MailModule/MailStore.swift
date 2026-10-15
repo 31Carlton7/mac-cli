@@ -39,6 +39,9 @@ public protocol MailStore {
     func window(account: String, scan: Int) async throws -> [EmailItem]
     /// The message with `id` if it is inside that account's newest `scan`, body populated; nil otherwise.
     func find(id: String, account: String, scan: Int) async throws -> EmailItem?
+    /// The body of Mail's message `rowID` in that account's `mailbox` (a
+    /// path like `[Gmail]/All Mail`); nil when Mail has no such message.
+    func body(rowID: Int64, accountID: String, mailbox: String) async throws -> String?
     /// Returns false when the id isn't inside that account's window.
     func markRead(id: String, account: String, scan: Int) async throws -> Bool
     func archive(id: String, account: String, scan: Int) async throws -> Bool

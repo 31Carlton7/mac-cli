@@ -16,12 +16,15 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
     public let hasAttachments: Bool?
     public let category: String?
     public let summary: String?
+    /// Only when the message file was read.
+    public let attachments: [EmailAttachment]?
 
     public init(id: String, subject: String, from: String, date: Date,
                 isRead: Bool, account: String, body: String?,
                 mailbox: String? = nil, to: [String]? = nil, cc: [String]? = nil,
                 isFlagged: Bool? = nil, hasAttachments: Bool? = nil,
-                category: String? = nil, summary: String? = nil) {
+                category: String? = nil, summary: String? = nil,
+                attachments: [EmailAttachment]? = nil) {
         self.id = id
         self.subject = subject
         self.from = from
@@ -36,11 +39,27 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
         self.hasAttachments = hasAttachments
         self.category = category
         self.summary = summary
+        self.attachments = attachments
     }
 
     public var humanLine: String {
         let unread = isRead ? "" : "  [unread]"
         return "\(id.isEmpty ? "(no Message-ID)" : id)  \(subject)  \(from)  \(humanDate.string(from: date))\(unread)"
+    }
+}
+
+public struct EmailAttachment: Codable, Equatable {
+    public let name: String?
+    public let mimeType: String
+    public let size: Int
+    /// Mail keeps the bytes outside the message file; `size` is the one it recorded.
+    public let isExternal: Bool
+
+    public init(name: String?, mimeType: String, size: Int, isExternal: Bool) {
+        self.name = name
+        self.mimeType = mimeType
+        self.size = size
+        self.isExternal = isExternal
     }
 }
 
