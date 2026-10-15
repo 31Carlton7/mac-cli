@@ -6,6 +6,12 @@ final class MailCommandParsingTests: XCTestCase {
         _ = try MailCommand.parseAsRoot(["unread", "--account", "Work", "--limit", "10", "--json"])
     }
 
+    /// Reads come from Mail's Envelope Index, so the summary must not say
+    /// everything goes through Mail.app.
+    func testTheAbstractDoesNotClaimEverythingGoesThroughMailApp() {
+        XCTAssertFalse(MailCommand.configuration.abstract.contains("Mail.app"))
+    }
+
     func testReadPathsAcceptScan() {
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["unread", "--scan", "100"]))
         XCTAssertNoThrow(try MailCommand.parseAsRoot(["search", "invoice", "--scan", "100"]))

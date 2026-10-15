@@ -40,7 +40,7 @@ public struct EmailItem: Codable, Equatable, HumanRenderable {
 
     public var humanLine: String {
         let unread = isRead ? "" : "  [unread]"
-        return "\(id)  \(subject)  \(from)  \(humanDate.string(from: date))\(unread)"
+        return "\(id.isEmpty ? "(no Message-ID)" : id)  \(subject)  \(from)  \(humanDate.string(from: date))\(unread)"
     }
 }
 

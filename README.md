@@ -22,7 +22,7 @@ macOS will prompt once per capability (Calendar, Reminders, Contacts) the first 
 mac doctor
 ```
 
-Mail, Messages, Notes, Music, TV, Shortcuts, Finder, Keynote, Pages, and Numbers additionally need Automation consent (prompted on first use) and, for reading Messages history, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
+Mail, Messages, Notes, Music, TV, Shortcuts, Finder, Keynote, Pages, and Numbers additionally need Automation consent (prompted on first use) and, for reading Messages history and Mail's Envelope Index, Full Disk Access for your terminal app — `mac doctor` reports all of it with fix steps.
 
 ## Usage
 
@@ -73,6 +73,7 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - Errors are actionable one-liners on stderr; `mac doctor` reports missing permissions with fix steps.
 - Malformed invocations (unknown flags, missing required options) exit `64` (BSD EX_USAGE); `1` is reserved for semantic errors — not found or bad input.
 - `--json` always prints, even with `--quiet`; `--quiet` suppresses human-readable output only.
+- Mail message ids are the RFC Message-ID without angle brackets. Items read from Mail's Envelope Index also carry `mailbox`, `to`, `cc`, `isFlagged` and `hasAttachments`; a key appears only when its value is known.
 - Prefer `mac mail draft` over `mac mail send` unless the user explicitly asked to send.
 - `mac messages send` takes exact handles only — resolve names with `mac contacts find` first.
 - `mac call`/`mac facetime` are initiate-only; macOS confirms before dialing.
@@ -87,10 +88,11 @@ Every command supports `--json`. Dates accept ISO (`2026-08-27 14:00`), naturals
 - **Duplicate calendar/list names** (e.g. "Personal" in two accounts) resolve to the first match.
 - Contact phone/email labels (mobile/work/home) are flattened to plain values.
 - **No clear-to-nil:** edit flags replace values. A due date, once set, cannot be removed; notes/location/org can be blanked by passing an empty string. Names and titles cannot be set to empty.
-- **Mail reads are windowed.** Every read (`unread`, `search`, `read`, `mark-read`, `archive`) examines only the newest `--scan` messages (default 30) of each account's inbox. A message older than that window is invisible to `mac` — raise `--scan` (max 500) to look further back. AppleScript's `whose` filtering, which would search the whole mailbox, is unusable: on a 97k-message unified inbox it pins Mail.app at 98% CPU indefinitely.
-- **Without `--account`, `mac mail unread` is a fast sample, not a global newest-N.** Accounts are scanned smallest-inbox-first and scanning stops as soon as `--limit` is filled, so unread mail sitting in a large account may be omitted while a small account still has results. Pass `--account` for a deterministic per-account listing.
-- Mail search matches subject/sender only (no body search), and only within that same `--scan` window.
-- **Large mailboxes are slow.** Cost scales with messages touched: roughly 0.15s/message on a 1.7k-message account and ~1.5s/message on a 50k-message one. Keep `--scan` small on big accounts.
+- **`mac mail unread` and `search` read Mail's Envelope Index** (`~/Library/Mail/V*/MailData/Envelope Index`), which needs Full Disk Access. They see every message Mail has downloaded, in every account including Exchange, and still ask Mail.app once for the account list. `unread` is the newest `--limit` unread inbox messages across all enabled accounts. `search` matches subject, sender, and Mail's summary in every mailbox except Trash and Junk, and lists a message copied into several mailboxes once. Matching is case-insensitive for ASCII letters only. `--scan` is ignored on this path.
+- **A message without a Message-ID header is listed with an empty `id`** (`(no Message-ID)` in human output). mac does not invent one, so such a message cannot be read or acted on by id.
+- **Without the index, Mail reads are windowed.** When the index is unreadable, `unread` and `search` fall back to Mail.app with a warning, and `read`, `mark-read` and `archive` always work this way for now: each examines only the newest `--scan` messages (default 30) of each account's inbox. A message older than that window is invisible — raise `--scan` (max 500) to look further back. In this mode `unread` without `--account` is a fast sample, not a global newest-N, and search matches subject/sender only. AppleScript's `whose` filtering, which would search the whole mailbox, is unusable: on a 97k-message unified inbox it pins Mail.app at 98% CPU indefinitely.
+- **Windowed reads on large mailboxes are slow.** Cost scales with messages touched: roughly 0.15s/message on a 1.7k-message account and ~1.5s/message on a 50k-message one. Keep `--scan` small on big accounts.
+- Mail search has no body search.
 - Mail composition is plain-text; no attachments.
 - Messages: group chats are read-only.
 - `mac messages history` accepts an exact handle or, failing that, an unambiguous 10+ digit variant; a variant matching more than one conversation is rejected rather than guessed.

@@ -79,6 +79,29 @@ enum MailScripts {
         """
     }
 
+    /// `id FS name FS enabled` per account, enabled as `1`/`0`. Three bulk
+    /// property fetches, so the cost does not grow with the account count.
+    static func accountDirectory() -> String {
+        """
+        \(prologue)
+        tell application "Mail"
+            with timeout of 600 seconds
+                set ids to id of every account
+                set names to name of every account
+                set flags to enabled of every account
+            end timeout
+        end tell
+        set out to {}
+        repeat with i from 1 to count of ids
+            set e to "0"
+            if item i of flags then set e to "1"
+            copy ((item i of ids) as text) & FS & ((item i of names) as text) & FS & e to end of out
+        end repeat
+        set AppleScript's text item delimiters to RS
+        return out as text
+        """
+    }
+
     /// `name FS inboxCount` per account, `-1` when the account has no inbox.
     /// Deliberately touches no message properties — a mailbox's message `count`
     /// is free, which makes it a usable proxy for how expensive that account

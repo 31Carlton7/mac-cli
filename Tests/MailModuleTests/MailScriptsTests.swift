@@ -5,6 +5,7 @@ final class MailScriptsTests: XCTestCase {
     /// One instance of every builder, for the invariants that must hold across all of them.
     static let allReadScripts: [(String, String)] = [
         ("accounts", MailScripts.accounts()),
+        ("accountDirectory", MailScripts.accountDirectory()),
         ("accountInboxes", MailScripts.accountInboxes()),
         ("window", MailScripts.window(account: "Work", scan: 30)),
         ("find", MailScripts.find(account: "Work", id: "<m1@x>", scan: 30)),
@@ -37,7 +38,7 @@ final class MailScriptsTests: XCTestCase {
     /// `mailbox "Inbox" of account N` is case-sensitive and fails outright on
     /// accounts whose inbox is named `INBOX`; AppleScript's `is` is not.
     func testMailboxScriptsFindTheInboxCaseInsensitively() {
-        for (name, script) in Self.allReadScripts where name != "accounts" {
+        for (name, script) in Self.allReadScripts where !name.hasPrefix("account") || name == "accountInboxes" {
             XCTAssertTrue(script.contains(#"(name of m) is "Inbox""#), "\(name) does not scan for the inbox")
             XCTAssertFalse(script.contains(#"mailbox "Inbox""#), "\(name) uses a case-sensitive inbox lookup")
         }
@@ -50,6 +51,14 @@ final class MailScriptsTests: XCTestCase {
         XCTAssertTrue(script.contains("repeat with a in accounts"))
         XCTAssertTrue(script.contains("name of a"))
         XCTAssertTrue(script.contains("character id 30"))
+    }
+
+    func testAccountDirectoryBulkFetchesIDNameAndEnabledInOneScript() {
+        let script = MailScripts.accountDirectory()
+        XCTAssertTrue(script.contains("set ids to id of every account"))
+        XCTAssertTrue(script.contains("set names to name of every account"))
+        XCTAssertTrue(script.contains("set flags to enabled of every account"))
+        XCTAssertFalse(script.contains("mailboxes of"), "the directory must not touch mailboxes")
     }
 
     func testAccountInboxesCountsWithoutTouchingMessageProperties() {

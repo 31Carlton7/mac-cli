@@ -12,39 +12,41 @@ struct ComposeOptions: ParsableArguments {
 public struct MailCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "mail",
-        abstract: "Read, triage, and compose email via Mail.app.",
+        abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, Read.self, Draft.self, Send.self,
                       MarkRead.self, Archive.self, Accounts.self]
     )
 
     public init() {}
 
+    static let fallbackScanHelp = "Only when Mail's Envelope Index is unreadable: messages to examine per account (default: 30)."
+
     struct Unread: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "List unread inbox messages.",
             discussion: """
-                Each account's inbox is examined only as deep as --scan (newest first).
+                Reads Mail's Envelope Index without opening Mail.app windows, so \
+                every inbox message counts. Without --account the result is the \
+                newest --limit unread messages across all enabled accounts.
 
-                Without --account, accounts are scanned smallest-inbox-first and \
-                scanning stops as soon as --limit is filled, so the result is a fast \
-                sample of your unread mail, NOT a guaranteed global newest-N. Pass \
-                --account for a deterministic per-account result.
+                When the index is unreadable (see: mac doctor) it falls back to \
+                Mail.app, which examines only the newest --scan messages of each \
+                inbox and returns a fast sample rather than the global newest-N.
 
                 Examples:
                   mac mail unread
                   mac mail unread --account Work --limit 10 --json
-                  mac mail unread --account Work --scan 200
                 """
         )
 
         @Option(help: "Only this account.") var account: String?
         @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
-        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
+        @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let items = try await MailActions(store: AppleScriptMailStore())
+                let items = try await MailActions(store: AppleScriptMailStore(), index: IndexMailStore())
                     .unread(account: account, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
             }
@@ -53,25 +55,29 @@ public struct MailCommand: AsyncParsableCommand {
 
     struct Search: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Search inbox by subject or sender (not body).",
+            abstract: "Search mail by subject, sender, or Mail's summary (not body).",
             discussion: """
-                Matches subject and sender within the newest --scan messages of each \
-                account's inbox — not the full mailbox. A message older than that \
-                window will not be found; raise --scan to look further back.
+                Searches every mailbox of every enabled account except Trash and \
+                Junk, newest first, through Mail's Envelope Index. A message copied \
+                into several mailboxes is listed once.
+
+                When the index is unreadable (see: mac doctor) it falls back to \
+                Mail.app, which matches subject and sender within the newest --scan \
+                messages of each inbox only.
 
                 Example:
                   mac mail search "invoice" --limit 10 --json
                 """
         )
 
-        @Argument(help: "Text to match against subject and sender.") var query: String
+        @Argument(help: "Text to match against subject, sender, and Mail's summary.") var query: String
         @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
-        @Option(help: "Messages to examine per account (default: 30). Higher finds more but is slower on large mailboxes.") var scan: Int = MailActions.defaultScan
+        @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let items = try await MailActions(store: AppleScriptMailStore())
+                let items = try await MailActions(store: AppleScriptMailStore(), index: IndexMailStore())
                     .search(query: query, limit: limit, scan: scan)
                 Output.emit(items, json: output.json)
             }
@@ -89,7 +95,7 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let item = try await MailActions(store: AppleScriptMailStore()).read(id: id, scan: scan)
+                let item = try await MailActions(store: AppleScriptMailStore(), index: IndexMailStore()).read(id: id, scan: scan)
                 Output.emit(item, json: output.json)
             }
         }
@@ -152,7 +158,7 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore()).markRead(id: id, scan: scan)
+                try await MailActions(store: AppleScriptMailStore(), index: IndexMailStore()).markRead(id: id, scan: scan)
                 Output.emitConfirmation(key: "markedRead", value: id, human: "marked read",
                                         json: output.json, quiet: output.quiet)
             }
@@ -170,7 +176,7 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                try await MailActions(store: AppleScriptMailStore()).archive(id: id, scan: scan)
+                try await MailActions(store: AppleScriptMailStore(), index: IndexMailStore()).archive(id: id, scan: scan)
                 Output.emitConfirmation(key: "archived", value: id, human: "archived",
                                         json: output.json, quiet: output.quiet)
             }
@@ -194,7 +200,7 @@ public struct MailCommand: AsyncParsableCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let names = try await MailActions(store: AppleScriptMailStore()).accounts()
+                let names = try await MailActions(store: AppleScriptMailStore(), index: IndexMailStore()).accounts()
                 if output.json {
                     print(Self.accountsJSON(names))
                 } else if !names.isEmpty {

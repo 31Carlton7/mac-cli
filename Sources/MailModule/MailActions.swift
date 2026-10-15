@@ -3,9 +3,21 @@ import Foundation
 
 public struct MailActions {
     let store: MailStore
+    /// Answers `unread`, `search` and `accounts` when Mail's Envelope Index is
+    /// readable. Without it, or when the index is unavailable, every read
+    /// goes through `store`'s Mail.app windows.
+    let index: IndexMailStore?
+    let notice: (String) -> Void
 
-    public init(store: MailStore) {
+    public init(store: MailStore, index: IndexMailStore? = nil,
+                notice: @escaping (String) -> Void = MailActions.printNotice) {
         self.store = store
+        self.index = index
+        self.notice = notice
+    }
+
+    public static func printNotice(_ text: String) {
+        FileHandle.standardError.write(Data((text + "\n").utf8))
     }
 
     /// How many of the newest messages each account's inbox contributes.
@@ -15,33 +27,39 @@ public struct MailActions {
     public static let defaultScan = 30
 
     public func accounts() async throws -> [String] {
-        try await store.accounts()
+        if let index { return try await index.directory.accounts().map(\.name) }
+        return try await store.accounts()
     }
 
-    public func unread(account: String? = nil, limit: Int,
-                       scan: Int = MailActions.defaultScan) async throws -> [EmailItem] {
+    /// `scan` only applies to the Mail.app fallback; nil means the default.
+    public func unread(account: String? = nil, limit: Int, scan: Int? = nil) async throws -> [EmailItem] {
         try validate(limit: limit)
-        try validate(scan: scan)
+        if let scan { try validate(scan: scan) }
+        if let indexed = try await fromIndex(scan: scan, { try await $0.unread(account: account, limit: limit) }) {
+            return indexed
+        }
         var collected: [EmailItem] = []
         for name in try await targetAccounts(account) {
-            collected.append(contentsOf: try await store.window(account: name, scan: scan)
+            collected.append(contentsOf: try await store.window(account: name, scan: scan ?? Self.defaultScan)
                 .filter { !$0.isRead })
             if collected.count >= limit { break }
         }
         return Self.newestFirst(collected, limit: limit)
     }
 
-    public func search(query: String, limit: Int,
-                       scan: Int = MailActions.defaultScan) async throws -> [EmailItem] {
+    public func search(query: String, limit: Int, scan: Int? = nil) async throws -> [EmailItem] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             throw MacError(.badInput, "Search query cannot be empty.")
         }
         try validate(limit: limit)
-        try validate(scan: scan)
+        if let scan { try validate(scan: scan) }
+        if let indexed = try await fromIndex(scan: scan, { try await $0.search(query: trimmed, limit: limit) }) {
+            return indexed
+        }
         var collected: [EmailItem] = []
         for name in try await orderedAccounts() {
-            collected.append(contentsOf: try await store.window(account: name, scan: scan)
+            collected.append(contentsOf: try await store.window(account: name, scan: scan ?? Self.defaultScan)
                 .filter { Self.matches(trimmed, $0) })
             if collected.count >= limit { break }
         }
@@ -91,6 +109,29 @@ public struct MailActions {
         }
     }
 
+    // MARK: - Index
+
+    /// The index's answer, or nil after printing why the caller must fall
+    /// back to Mail.app. Only an unusable index falls back: a failed query
+    /// on a readable index is an error, never a fallback.
+    private func fromIndex(scan: Int?, _ read: (IndexMailStore) async throws -> [EmailItem]) async throws -> [EmailItem]? {
+        guard let index else { return nil }
+        do {
+            let items = try await read(index)
+            if scan != nil { notice(Self.scanIgnored) }
+            return items
+        } catch let unavailable as EnvelopeIndex.Unavailable {
+            notice(Self.fallingBack(unavailable.error))
+            return nil
+        }
+    }
+
+    static let scanIgnored = "note: --scan is ignored: Mail's Envelope Index covers every message."
+
+    static func fallingBack(_ error: MacError) -> String {
+        "warning: reading through Mail.app, which sees only the newest --scan messages of each inbox. \(error.message)"
+    }
+
     // MARK: - Account selection
 
     /// Which accounts to sweep, and in what order. A named account is resolved
@@ -112,10 +153,21 @@ public struct MailActions {
     /// Accounts with no inbox are dropped; ties break by name so the sweep order
     /// is reproducible.
     private func orderedAccounts() async throws -> [String] {
-        try await store.accountInboxes()
+        try await accountInboxes()
             .filter { $0.inboxCount >= 0 }
             .sorted { $0.inboxCount == $1.inboxCount ? $0.name < $1.name : $0.inboxCount < $1.inboxCount }
             .map(\.name)
+    }
+
+    /// Inbox sizes from the index when it is readable, saving a Mail.app
+    /// pass over every account's mailboxes.
+    private func accountInboxes() async throws -> [MailAccountInfo] {
+        if let index {
+            do {
+                return try await index.accountInboxes()
+            } catch is EnvelopeIndex.Unavailable {}
+        }
+        return try await store.accountInboxes()
     }
 
     // MARK: - Helpers
