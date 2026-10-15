@@ -160,32 +160,32 @@ final class MailCommandParsingTests: XCTestCase {
     }
 
     func testAttachRepeats() throws {
-        XCTAssertEqual(try composeOptions(["--attach", "a.pdf", "--attach", "b.png"]).attach,
+        XCTAssertEqual(try composeOptions(["--attach", "a.pdf", "--attach", "b.png"]).content.attach,
                        ["a.pdf", "b.png"])
     }
 
     func testPlainBodyHasNoHTML() throws {
-        let body = try composeOptions(["--body", "hello"]).resolvedBody()
+        let body = try composeOptions(["--body", "hello"]).content.resolvedBody()
         XCTAssertEqual(body.text, "hello")
         XCTAssertNil(body.html)
     }
 
     func testMarkdownBecomesHTML() throws {
-        let body = try composeOptions(["--markdown", "# Hi"]).resolvedBody()
+        let body = try composeOptions(["--markdown", "# Hi"]).content.resolvedBody()
         XCTAssertEqual(body.html, "<h1>Hi</h1>")
         XCTAssertEqual(body.text, "")
     }
 
     func testBodyFilesAreRead() throws {
         let path = try temporaryFile(Data("# From file ✓\n".utf8))
-        XCTAssertEqual(try composeOptions(["--body-file", path]).resolvedBody().text, "# From file ✓\n")
-        XCTAssertEqual(try composeOptions(["--html-file", path]).resolvedBody().html, "# From file ✓\n")
-        XCTAssertEqual(try composeOptions(["--markdown-file", path]).resolvedBody().html, "<h1>From file ✓</h1>")
+        XCTAssertEqual(try composeOptions(["--body-file", path]).content.resolvedBody().text, "# From file ✓\n")
+        XCTAssertEqual(try composeOptions(["--html-file", path]).content.resolvedBody().html, "# From file ✓\n")
+        XCTAssertEqual(try composeOptions(["--markdown-file", path]).content.resolvedBody().html, "<h1>From file ✓</h1>")
     }
 
     func testOnlyOneBodyOptionIsAllowed() throws {
         let options = try composeOptions(["--body", "x", "--markdown", "y"])
-        XCTAssertThrowsError(try options.resolvedBody()) { error in
+        XCTAssertThrowsError(try options.content.resolvedBody()) { error in
             XCTAssertEqual((error as? MacError)?.code, .badInput)
             XCTAssertEqual((error as? MacError)?.message, "Use only one of --body, --markdown.")
         }
@@ -193,11 +193,11 @@ final class MailCommandParsingTests: XCTestCase {
 
     func testMissingOrNonUTF8BodyFileIsBadInput() throws {
         let missing = try composeOptions(["--html-file", "/nonexistent/mac-cli/body.html"])
-        XCTAssertThrowsError(try missing.resolvedBody()) { error in
+        XCTAssertThrowsError(try missing.content.resolvedBody()) { error in
             XCTAssertEqual((error as? MacError)?.code, .badInput)
         }
         let binary = try temporaryFile(Data([0xFF, 0xFE, 0x00, 0xC3]))
-        XCTAssertThrowsError(try composeOptions(["--body-file", binary]).resolvedBody()) { error in
+        XCTAssertThrowsError(try composeOptions(["--body-file", binary]).content.resolvedBody()) { error in
             XCTAssertEqual((error as? MacError)?.code, .badInput)
         }
     }

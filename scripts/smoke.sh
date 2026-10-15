@@ -74,6 +74,17 @@ for verb in archive delete flag junk not-junk; do
     echo "smoke: $verb of an unknown id should fail" >&2; exit 1
   fi
 done
+# reply and forward resolve ids the same way; an unknown id exits 1 (notFound).
+rc=0; "$MAC" mail reply "mac-cli-smoke-no-such-message@example.invalid" --dry-run --json 2>/dev/null || rc=$?
+[ "$rc" -eq 1 ]
+rc=0; "$MAC" mail forward "mac-cli-smoke-no-such-message@example.invalid" --to "smoke@example.com" --dry-run --json 2>/dev/null || rc=$?
+[ "$rc" -eq 1 ]
+# Dry runs on the newest inbox message print what Mail would be asked to make, and change nothing.
+NEWEST_ID=$("$MAC" mail list --limit 1 --json | /usr/bin/python3 -c 'import json, sys; rows = json.load(sys.stdin); print(rows[0]["id"] if rows else "")')
+if [ -n "$NEWEST_ID" ]; then
+  "$MAC" mail reply "$NEWEST_ID" --mailbox Inbox --all --body "smoke" --dry-run --json | json_field status | grep -q "dryRun"
+  "$MAC" mail forward "$NEWEST_ID" --mailbox Inbox --to "smoke@example.com" --dry-run --json | json_field status | grep -q "dryRun"
+fi
 "$MAC" mail open "<smoke+1@example.com>" --dry-run | grep -q "message://%3Csmoke%2B1@example.com%3E"
 if "$MAC" mail copy "$UNKNOWN" --to Archive --dry-run 2>/dev/null; then
   echo "smoke: copy of an unknown id should fail" >&2; exit 1

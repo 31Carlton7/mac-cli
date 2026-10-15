@@ -401,6 +401,131 @@ enum MailScripts {
         return out
     }
 
+    /// Has Mail reply to or forward message `rowID` of `mailbox`, by numeric
+    /// id. `html` replaces the whole body, quote included, so it is set
+    /// before any file is attached. Emits an
+    /// `ok FS outgoingID FS subject` record, then `to` and `cc` records
+    /// listing the outgoing message's addresses; `NOTFOUND` when Mail lacks
+    /// the original.
+    static func respond(_ kind: MailResponseKind, rowID: Int64, mailbox: String, accountID: String,
+                        html: String?, attachments: [String], send: Bool) -> String {
+        let make: String
+        var recipients: [String] = []
+        switch kind {
+        case .reply(let all):
+            make = "set msg to reply src opening window \(!send) reply to all \(all)"
+        case .forward(let to, let cc):
+            make = "set msg to forward src opening window \(!send)"
+            recipients = to.map { "tell msg to make new to recipient with properties {address:\"\(AppleScript.escape($0))\"}" }
+                + cc.map { "tell msg to make new cc recipient with properties {address:\"\(AppleScript.escape($0))\"}" }
+        }
+        let body = html.map { ["set html content of msg to \"\(AppleScript.escape($0))\""] } ?? []
+        let files = attachments.map {
+            "tell msg to make new attachment with properties {file name:(POSIX file \"\(AppleScript.escape($0))\")} at after the last paragraph of content"
+        }
+        let steps = ([make] + recipients + body + files).map { "        " + $0 }.joined(separator: "\n")
+        return """
+        set FS to character id 31
+        set RS to character id 30
+        tell application "Mail"
+            with timeout of 60 seconds
+                try
+                    set src to «class mssg» id \(rowID) of mailbox "\(AppleScript.escape(mailbox))" of account id "\(AppleScript.escape(accountID))"
+                    get id of src
+                on error number -1728
+                    return "NOTFOUND"
+                end try
+        \(steps)
+                -- Mail fills in a reply's recipients a moment after making it.
+                repeat 20 times
+                    if (count of to recipients of msg) > 0 then exit repeat
+                    delay 0.25
+                end repeat
+                set subj to subject of msg
+                if subj is missing value then set subj to ""
+                set out to {"ok" & FS & ((id of msg) as text) & FS & subj}
+                set toLine to "to"
+                repeat with r in to recipients of msg
+                    set toLine to toLine & FS & ((address of r) as text)
+                end repeat
+                set ccLine to "cc"
+                repeat with r in cc recipients of msg
+                    set ccLine to ccLine & FS & ((address of r) as text)
+                end repeat
+                copy toLine to end of out
+                copy ccLine to end of out
+                \(send ? "" : "activate")
+            end timeout
+        end tell
+        set AppleScript's text item delimiters to RS
+        return out as text
+        """
+    }
+
+    /// The outgoing message `respond` made, as Mail reports it.
+    struct Response: Equatable {
+        let id: Int
+        let subject: String
+        let to: [String]
+        let cc: [String]
+    }
+
+    /// Parses `respond` output; nil when it has no `ok` record with a
+    /// numeric id, so an unexpected answer is never taken as success.
+    static func response(from output: String) -> Response? {
+        let records = AppleScript.parseRecords(output)
+        guard let head = records.first, head.count >= 3, head[0] == "ok", let id = Int(head[1]) else { return nil }
+        func addresses(_ key: String) -> [String] {
+            (records.first { $0.first == key } ?? []).dropFirst().filter { !$0.isEmpty }
+        }
+        return Response(id: id, subject: head[2...].joined(separator: AppleScript.fieldSep),
+                        to: addresses("to"), cc: addresses("cc"))
+    }
+
+    /// Sends an outgoing message `respond` left hidden. With attachments,
+    /// Mail gets a moment to load the files first. Emits `sent` or `failed`.
+    static func sendOutgoing(id: Int, settle: Bool) -> String {
+        """
+        tell application "Mail"
+            with timeout of 60 seconds
+                set msg to outgoing message id \(id)
+        \(settle ? "        delay 1" : "")
+                if (send msg) then return "sent"
+            end timeout
+        end tell
+        return "failed"
+        """
+    }
+
+    /// Shows a hidden outgoing message so it can be reviewed instead of sent.
+    static func showOutgoing(id: Int) -> String {
+        """
+        tell application "Mail"
+            set visible of outgoing message id \(id) to true
+            activate
+        end tell
+        return "ok"
+        """
+    }
+
+    /// Every address of one account, one per record.
+    static func accountAddresses(accountID: String) -> String {
+        """
+        set RS to character id 30
+        tell application "Mail"
+            with timeout of 60 seconds
+                set found to email addresses of account id "\(AppleScript.escape(accountID))"
+            end timeout
+        end tell
+        set AppleScript's text item delimiters to RS
+        return found as text
+        """
+    }
+
+    static func addresses(from output: String) -> [String] {
+        AppleScript.parseRecords(output).compactMap(\.first).filter { !$0.isEmpty }
+    }
+
     /// With HTML, the message starts empty and `html content` fills it. That
     /// property is missing from Mail's dictionary but works on Mail 16; it
     /// replaces anything already in the body, so it must be set before files

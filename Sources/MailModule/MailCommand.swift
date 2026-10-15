@@ -6,6 +6,19 @@ struct ComposeOptions: ParsableArguments {
     @Option(help: #"Recipient addresses, comma-separated. A name is kept: Ann <a@example.com>, "Doe, John" <j@example.com>."#) var to: String
     @Option(help: "CC addresses, written like --to.") var cc: String?
     @Option(help: "Subject line.") var subject: String = ""
+    @OptionGroup var content: BodyOptions
+    @Flag(help: "Print what would be composed without opening Mail.") var dryRun = false
+
+    func compose(send: Bool) async throws -> MailDraft {
+        let (text, html) = try content.resolvedBody()
+        return try await MailActions(store: AppleScriptMailStore())
+            .compose(to: to, cc: cc, subject: subject, body: text, html: html,
+                     attachments: content.attach, send: send, dryRun: dryRun)
+    }
+}
+
+/// The body and attachment options shared by draft, send, reply and forward.
+struct BodyOptions: ParsableArguments {
     @Option(help: "Plain-text body.") var body: String?
     @Option(help: "Read the plain-text body from a UTF-8 file.") var bodyFile: String?
     @Option(help: "HTML body.") var html: String?
@@ -13,7 +26,6 @@ struct ComposeOptions: ParsableArguments {
     @Option(help: "Markdown body, sent as HTML.") var markdown: String?
     @Option(help: "Read the Markdown body from a UTF-8 file.") var markdownFile: String?
     @Option(help: "Attach a file. Repeat for several.") var attach: [String] = []
-    @Flag(help: "Print what would be composed without opening Mail.") var dryRun = false
 
     /// The plain-text body and, for HTML or Markdown, the HTML that replaces it.
     func resolvedBody() throws -> (text: String, html: String?) {
@@ -45,11 +57,9 @@ struct ComposeOptions: ParsableArguments {
         return text
     }
 
-    func compose(send: Bool) async throws -> MailDraft {
+    func responseContent() throws -> MailResponseContent {
         let (text, html) = try resolvedBody()
-        return try await MailActions(store: AppleScriptMailStore())
-            .compose(to: to, cc: cc, subject: subject, body: text, html: html,
-                     attachments: attach, send: send, dryRun: dryRun)
+        return MailResponseContent(text: text, html: html, attachments: attach)
     }
 }
 
@@ -142,6 +152,7 @@ public struct MailCommand: AsyncParsableCommand {
         commandName: "mail",
         abstract: "Read, triage, and compose email.",
         subcommands: [Unread.self, Search.self, List.self, Wait.self, Watch.self, Read.self, Draft.self, Send.self,
+                      Reply.self, Forward.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
                       Archive.self, Move.self, Copy.self, Label.self, Delete.self, Junk.self, NotJunk.self, Extract.self, Unsubscribe.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
     )
@@ -495,6 +506,97 @@ public struct MailCommand: AsyncParsableCommand {
                 }
                 Output.emitConfirmation(key: "sent", value: compose.to, human: "sent to",
                                         json: output.json, quiet: output.quiet)
+            }
+        }
+    }
+
+    static func responseDiscussion(_ verb: String, made: String, extra: String) -> String {
+        """
+        Mail.app makes the \(made) itself, from the exact message the id \
+        resolves to in Mail's Envelope Index, so Mail sets the recipients, \
+        the subject, In-Reply-To, References and the quoted original. A \
+        message with copies in several mailboxes is refused until --mailbox \
+        or --account picks one.
+
+        Without a body or --attach, Mail's \(made) is left exactly as Mail \
+        made it. Mail drops its quote\(extra) as soon as a script changes \
+        the body, so with a body or --attach mac puts the new text first and \
+        rebuilds the quote below it from the original's message file.
+
+        The receipt reads the recipients and subject back from Mail's \
+        outgoing message. With --send, mac sends only when Mail's message has \
+        its recipients; otherwise it stays open as a draft.
+
+        JSON: {"action","status","id","account","mailbox","subject","to", \
+        "cc","quote","attachments"}, status draft, sent or dryRun.
+        Agents: prefer the default draft; use --send only when the user \
+        explicitly asked to send.
+        """
+    }
+
+    struct Reply: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Reply to a message by exact id, as a draft unless --send.",
+            discussion: MailCommand.responseDiscussion("reply", made: "reply", extra: "") + """
+
+
+                Examples:
+                  mac mail reply <id> --dry-run
+                  mac mail reply <id> --all --body "Thanks, see you then."
+                  mac mail reply <id> --markdown "**Done.**" --attach notes.pdf --json
+                """
+        )
+
+        @Argument(help: "Message id from 'mac mail search', with or without angle brackets.") var id: String
+        @ArgumentParser.Flag(help: "Reply to everyone the message went to, not only the sender.") var all = false
+        @ArgumentParser.Flag(help: "Send the reply instead of leaving a draft open.") var send = false
+        @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
+        @Option(help: "Only the copy in this mailbox (full path), when a message is in several.") var mailbox: String?
+        @OptionGroup var content: BodyOptions
+        @ArgumentParser.Flag(help: "Print what would be composed without changing anything in Mail.") var dryRun = false
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let receipt = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                    .respond(.reply(all: all), id: id, account: account, mailbox: mailbox,
+                             content: try content.responseContent(), send: send, dryRun: dryRun)
+                Output.emit(receipt, json: output.json)
+            }
+        }
+    }
+
+    struct Forward: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Forward a message by exact id, as a draft unless --send.",
+            discussion: MailCommand.responseDiscussion("forward", made: "forward",
+                                                       extra: " and the forwarded attachments") + """
+                 The original's attachments are carried into the rebuilt forward; \
+                one Mail has not downloaded makes the command fail before Mail is asked.
+
+                Examples:
+                  mac mail forward <id> --to a@b.com --dry-run
+                  mac mail forward <id> --to a@b.com,c@d.com --cc e@f.com
+                  mac mail forward <id> --to a@b.com --body "FYI, see below." --json
+                """
+        )
+
+        @Argument(help: "Message id from 'mac mail search', with or without angle brackets.") var id: String
+        @Option(help: "Recipient addresses, comma-separated or repeated.") var to: [String] = []
+        @Option(help: "CC addresses, comma-separated or repeated.") var cc: [String] = []
+        @ArgumentParser.Flag(help: "Send the forward instead of leaving a draft open.") var send = false
+        @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
+        @Option(help: "Only the copy in this mailbox (full path), when a message is in several.") var mailbox: String?
+        @OptionGroup var content: BodyOptions
+        @ArgumentParser.Flag(help: "Print what would be composed without changing anything in Mail.") var dryRun = false
+        @OptionGroup var output: OutputOptions
+
+        func run() async {
+            await withErrorHandling(json: output.json) {
+                let receipt = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                    .respond(.forward(to: to, cc: cc), id: id, account: account, mailbox: mailbox,
+                             content: try content.responseContent(), send: send, dryRun: dryRun)
+                Output.emit(receipt, json: output.json)
             }
         }
     }

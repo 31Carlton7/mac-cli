@@ -74,4 +74,25 @@ final class MailScriptsCompileTests: XCTestCase {
             }
         }
     }
+
+    func testReplyAndForwardScriptsCompile() {
+        for name in hostileNames {
+            let kinds = [MailResponseKind.reply(all: false), .reply(all: true),
+                         .forward(to: [name, "a@example.com"], cc: [name])]
+            for kind in kinds {
+                for send in [false, true] {
+                    assertCompiles(MailScripts.respond(kind, rowID: 7, mailbox: name, accountID: name,
+                                                       html: "<p>\(name)</p>", attachments: ["/tmp/" + name], send: send),
+                                   "respond \(kind) send:\(send) \(name)")
+                }
+            }
+            assertCompiles(MailScripts.accountAddresses(accountID: name), "accountAddresses \(name)")
+        }
+        assertCompiles(MailScripts.respond(.reply(all: false), rowID: 7, mailbox: "INBOX", accountID: "A",
+                                           html: nil, attachments: [], send: false), "respond without html")
+        for settle in [false, true] {
+            assertCompiles(MailScripts.sendOutgoing(id: 7, settle: settle), "sendOutgoing settle:\(settle)")
+        }
+        assertCompiles(MailScripts.showOutgoing(id: 7), "showOutgoing")
+    }
 }

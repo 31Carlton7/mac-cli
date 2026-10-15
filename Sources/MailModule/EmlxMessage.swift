@@ -64,6 +64,17 @@ public struct EmlxMessage: Equatable {
     /// Mail's flags word from the trailing property list.
     public let flags: Int64?
     private let headers: [MailHeader]
+    /// The still-encoded body of each attachment, in `attachments` order;
+    /// nil for one Mail stored outside the file.
+    private let attachmentParts: [EncodedPart?]
+
+    /// The bytes of `attachments[index]`, or nil when Mail stored them
+    /// outside the message file.
+    func attachmentData(at index: Int) -> Data? {
+        guard let part = attachmentParts[index] else { return nil }
+        let entity = MIMEEntity(headers: [("Content-Transfer-Encoding", part.transferEncoding)], body: part.body)
+        return Data(entity.decodedBody())
+    }
 
     /// The decoded value of the first header with this name.
     public func header(_ name: String) -> String? {
@@ -125,6 +136,7 @@ public struct EmlxMessage: Equatable {
         bodyFormat = parts.format
         html = parts.html
         attachments = parts.attachments
+        attachmentParts = parts.attachmentParts
     }
 
     fileprivate static func isWhitespace(_ byte: UInt8) -> Bool {
@@ -254,10 +266,17 @@ public struct EmlxMessage: Equatable {
     }
 }
 
+private struct EncodedPart: Equatable {
+    let body: ArraySlice<UInt8>
+    let transferEncoding: String
+}
+
 /// Walks the MIME tree once, choosing the readable text and listing attachments.
 private struct BodyParts {
     var attachments: [MailAttachment] = []
     private(set) var html: String?
+    /// Each attachment's part, nil when its bytes are stored outside the file.
+    var attachmentParts: [EncodedPart?] = []
     private(set) var text = ""
     private(set) var format: EmlxMessage.BodyFormat = .none
 
@@ -305,6 +324,7 @@ private struct BodyParts {
             attachments.append(MailAttachment(name: entity.fileName, mimeType: type,
                                               size: isExternal ? (recordedSize ?? 0) : entity.decodedSize,
                                               isExternal: isExternal))
+            attachmentParts.append(isExternal ? nil : EncodedPart(body: entity.body, transferEncoding: entity.transferEncoding))
             return nil
         }
 

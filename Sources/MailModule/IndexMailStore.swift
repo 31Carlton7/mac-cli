@@ -209,7 +209,7 @@ public struct IndexMailStore {
 
     /// The row's own mailbox holds the file: All Mail for a Gmail message,
     /// even one shown in the inbox through a label.
-    private func file(of message: IndexedMessage) throws -> EmlxMessage {
+    func file(of message: IndexedMessage) throws -> EmlxMessage {
         try files().message(accountID: message.mailbox.accountID,
                             mailboxURL: message.mailbox.url, rowID: message.rowID)
     }
@@ -260,8 +260,9 @@ public struct IndexMailStore {
     /// Resolves every id to exactly one live row before anything changes.
     /// An id with no row in scope is `notFound`, one with several is
     /// `badInput`; either fails the whole call, so no mutation target is
-    /// ever guessed.
-    public func targets(for mutation: MailMutation, ids: [String], account: String?,
+    /// ever guessed. A nil `mutation` resolves the messages without a
+    /// destination, for commands that act on a message without changing it.
+    public func targets(for mutation: MailMutation?, ids: [String], account: String?,
                         mailbox: String?) async throws -> [MailTarget] {
         try index.ensureReadable()
         let accounts = try await directory.accounts(knowing: account.map { [$0] } ?? [])
@@ -303,12 +304,16 @@ public struct IndexMailStore {
             guard owner.isEnabled else {
                 throw MacError(.badInput, "Message \(id) is in account '\(owner.name)', which is disabled in Mail.")
             }
+            let target = MailTarget(account: owner, message: message, destination: nil)
+            guard let mutation else {
+                out.append(target)
+                continue
+            }
             if mailboxesByAccount == nil {
                 mailboxesByAccount = Dictionary(grouping: try index.mailboxes(accountIDs: accounts.map(\.id)),
                                                 by: \.accountID)
             }
             let accountMailboxes = mailboxesByAccount?[owner.id] ?? []
-            let target = MailTarget(account: owner, message: message, destination: nil)
             out.append(MailTarget(account: owner, message: message, destination: try Self.destination(
                 for: mutation, target: target, labels: labels[message.rowID] ?? [],
                 storesLabels: Self.storesLabels(accountMailboxes) || labels[message.rowID] != nil,

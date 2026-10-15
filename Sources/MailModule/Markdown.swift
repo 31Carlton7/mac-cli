@@ -201,7 +201,7 @@ enum Markdown {
         return nil
     }
 
-    private static func escape(_ text: String) -> String {
+    static func escape(_ text: String) -> String {
         var out = ""
         for c in text {
             switch c {

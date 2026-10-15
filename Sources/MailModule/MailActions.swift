@@ -396,6 +396,31 @@ public struct MailActions {
         return draft
     }
 
+    /// The addresses, the attachments, and that the id resolves to exactly
+    /// one message in the index are all checked before Mail is asked.
+    public func respond(_ kind: MailResponseKind, id: String, account: String? = nil, mailbox: String? = nil,
+                        content: MailResponseContent, send: Bool,
+                        dryRun: Bool = false) async throws -> MailResponseReceipt {
+        let what = kind.isForward ? "Forwarding" : "Replying"
+        var kind = kind
+        if case .forward(let to, let cc) = kind {
+            let recipients = try MailResponse.addresses(to, option: "--to")
+            guard !recipients.isEmpty else {
+                throw MacError(.badInput, "forward needs --to with at least one address.")
+            }
+            kind = .forward(to: recipients, cc: try MailResponse.addresses(cc, option: "--cc"))
+        }
+        let checked = MailResponseContent(text: content.text, html: content.html,
+                                          attachments: try content.attachments.map(Self.attachmentPath))
+        guard let index else { throw Self.needsIndex(what) }
+        do {
+            return try await index.respond(kind, id: id, account: account, mailbox: mailbox, content: checked,
+                                           send: send, dryRun: dryRun, notice: notice)
+        } catch is EnvelopeIndex.Unavailable {
+            throw Self.needsIndex(what)
+        }
+    }
+
     /// The absolute path of a file Mail can attach.
     static func attachmentPath(_ path: String) throws -> String {
         let expanded = (path as NSString).expandingTildeInPath
