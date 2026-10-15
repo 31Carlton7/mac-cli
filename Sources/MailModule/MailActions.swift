@@ -90,6 +90,17 @@ public struct MailActions {
         try await indexOnly("Listing mailboxes") { try await $0.mailboxes(account: account, all: all) }
     }
 
+    /// Index only: Mail.app has no way to count a whole mailbox by sender.
+    public func senders(query: String?, unreadOnly: Bool, by grouping: SenderGrouping,
+                        account: String?, limit: Int, now: Date = Date()) async throws -> [MailSender] {
+        try validate(limit: limit)
+        let parsed = try query.map { try MailQuery(parsing: $0, now: now) }
+        return try await indexOnly {
+            try await $0.senders(matching: parsed, unreadOnly: unreadOnly, by: grouping,
+                                 account: account, limit: limit)
+        }
+    }
+
     /// From the index and the message's file. A message the index knows but
     /// whose file cannot be read comes from Mail.app by its numeric id; one the
     /// index does not know is not found, never a window scan.
@@ -272,14 +283,17 @@ public struct MailActions {
         }
     }
 
-    /// For work only the index can do: a missing or unusable index is
-    /// `needsIndex(what)`.
-    private func indexOnly<T>(_ what: String, _ read: (IndexMailStore) async throws -> T) async throws -> T {
-        guard let index else { throw Self.needsIndex(what) }
+    /// For work only the index can do. With `what`, a missing or unusable
+    /// index is `needsIndex(what)`; without it, an unusable index is its own error.
+    private func indexOnly<T>(_ what: String? = nil, _ read: (IndexMailStore) async throws -> T) async throws -> T {
+        guard let index else {
+            throw what.map(Self.needsIndex)
+                ?? MacError(.permissionDenied, "This command needs Mail's Envelope Index. Run: mac doctor")
+        }
         do {
             return try await read(index)
-        } catch is EnvelopeIndex.Unavailable {
-            throw Self.needsIndex(what)
+        } catch let unavailable as EnvelopeIndex.Unavailable {
+            throw what.map(Self.needsIndex) ?? unavailable.error
         }
     }
 

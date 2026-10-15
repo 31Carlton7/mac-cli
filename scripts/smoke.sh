@@ -89,6 +89,11 @@ if "$MAC" mail list --mailbox "mac-cli-smoke-no-such-mailbox" >/dev/null 2>&1; t
   echo "smoke: list of an unknown mailbox did not fail" >&2
   exit 1
 fi
+"$MAC" mail senders --by domain --limit 3 --json | /usr/bin/python3 -c '
+import json, sys
+rows = json.load(sys.stdin)
+assert all("domain" in r and r["count"] >= r["unreadCount"] for r in rows), "smoke: malformed senders rows"
+'
 # Mailbox management runs --dry-run only: it resolves real mailboxes read-only
 # and must refuse the system ones without touching anything.
 MAIL_ACCOUNT=$("$MAC" mail accounts --json | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)[0])')

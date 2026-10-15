@@ -73,6 +73,11 @@ public struct IndexedMessage: Equatable {
     public var cc: [String] = []
 }
 
+/// What `senders` counts by: each address, or each domain after the `@`.
+public enum SenderGrouping: String, CaseIterable {
+    case address, domain
+}
+
 /// Read-only reader over Mail's Envelope Index, the SQLite database Mail.app
 /// keeps for every message it has downloaded. Never writes message data
 /// (SQLite may still create -shm/-wal sidecars for a WAL-mode database).
@@ -279,6 +284,62 @@ public final class EnvelopeIndex {
         var out: [Int64: [IndexMailbox]] = [:]
         try forEachRow(db, stmt) { s in
             if let mailbox = mailbox(s, 1) { out[sqlite3_column_int64(s, 0), default: []].append(mailbox) }
+        }
+        return out
+    }
+
+    /// Who sent the messages of these mailboxes matching `query`, most mail
+    /// first. Membership follows Gmail labels, and a message counts once
+    /// however many labels or copies it has.
+    public func senders(by grouping: SenderGrouping, mailboxes: [IndexMailbox],
+                        matching query: MailQuerySQL, limit: Int) throws -> [MailSender] {
+        guard !mailboxes.isEmpty else { return [] }
+        let db = try connection()
+        let ids = Self.list(mailboxes.map(\.rowID))
+        let key = grouping == .address
+            ? "lower(a.address)"
+            : "lower(substr(a.address, instr(a.address, '@') + 1))"
+        let condition = query.sql.isEmpty ? "1" : query.sql
+        let sql = """
+        WITH hits AS MATERIALIZED (
+            SELECT m.global_message_id AS gid, m.read AS read, m.date_received AS received,
+                   a.comment AS name, \(key) AS sender
+            FROM messages m JOIN addresses a ON a.ROWID = m.sender
+            WHERE m.deleted = 0 AND a.address != ''
+              AND (m.mailbox IN (\(ids)) OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(ids))))
+              AND (\(condition))
+        ), top AS (
+            SELECT sender, COUNT(DISTINCT gid) AS total,
+                   COUNT(DISTINCT CASE WHEN read = 0 THEN gid END) AS unread,
+                   MAX(received) AS latest
+            FROM hits
+            GROUP BY sender
+            ORDER BY total DESC, latest DESC, sender
+            LIMIT ?
+        ), names AS (
+            SELECT sender, name,
+                   row_number() OVER (PARTITION BY sender ORDER BY COUNT(DISTINCT gid) DESC, name) AS rank
+            FROM hits
+            WHERE name != '' AND sender IN (SELECT sender FROM top)
+            GROUP BY sender, name
+        )
+        SELECT t.sender, n.name, t.total, t.unread, t.latest
+        FROM top t LEFT JOIN names n ON n.sender = t.sender AND n.rank = 1
+        ORDER BY t.total DESC, t.latest DESC, t.sender;
+        """
+        let stmt = try prepare(db, sql)
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, query.bind(stmt), Int64(max(0, limit)))
+        var out: [MailSender] = []
+        try forEachRow(db, stmt) { s in
+            let sender = text(s, 0)
+            out.append(MailSender(
+                address: grouping == .address ? sender : nil,
+                domain: grouping == .domain ? sender : nil,
+                name: sqlite3_column_type(s, 1) == SQLITE_NULL ? nil : text(s, 1),
+                count: Int(sqlite3_column_int64(s, 2)),
+                unreadCount: Int(sqlite3_column_int64(s, 3)),
+                latest: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(s, 4)))))
         }
         return out
     }

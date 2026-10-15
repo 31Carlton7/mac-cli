@@ -54,6 +54,15 @@ final class MessagingModelsTests: XCTestCase {
         XCTAssertFalse(line("updates").contains("never shown"))
     }
 
+    func testMailSenderJSONCarriesOnlyItsGrouping() throws {
+        let sender = MailSender(domain: "shop.example", name: nil, count: 12, unreadCount: 3, latest: when)
+        let json = String(data: try Output.encoder.encode(sender), encoding: .utf8)!
+        XCTAssertEqual(json, #"{"count":12,"domain":"shop.example","latest":"2026-08-27T10:00:00Z","unreadCount":3}"#)
+        let named = MailSender(address: "news@shop.example", name: "Shop", count: 12, unreadCount: 3, latest: when)
+        XCTAssertTrue(named.humanLine.hasPrefix("12  news@shop.example  Shop  3 unread  latest "))
+        XCTAssertTrue(sender.humanLine.hasPrefix("12  shop.example  3 unread  latest "))
+    }
+
     func testMessageItemJSONSchema() throws {
         let message = MessageItem(id: "g1", chat: "+15551234567", sender: "+15551234567",
                                   text: "hey", date: when, isFromMe: false)

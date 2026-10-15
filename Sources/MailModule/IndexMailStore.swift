@@ -173,6 +173,31 @@ public struct IndexMailStore {
         copies.first(where: \.isInInbox) ?? copies.first
     }
 
+    /// Who sends the most mail to every inbox of every enabled account, or
+    /// to the mailboxes `query` names with `in:`.
+    public func senders(matching query: MailQuery?, unreadOnly: Bool, by grouping: SenderGrouping,
+                        account: String?, limit: Int) async throws -> [MailSender] {
+        try index.ensureReadable()
+        let all = try await directory.accounts(knowing: (account.map { [$0] } ?? []) + (query?.accountNames ?? []))
+        let accounts: [MailAccount]
+        if let account {
+            accounts = [try MailAccountDirectory.account(named: account, in: all)]
+        } else {
+            let named = Set((query?.accountNames ?? []).map { $0.lowercased() })
+            accounts = all.filter { $0.isEnabled || named.contains($0.name.lowercased()) }
+        }
+        let accountIDs = Dictionary(all.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
+        var clause = try query?.sql(accountIDs: accountIDs) ?? MailQuerySQL(sql: "")
+        if unreadOnly {
+            clause.sql = clause.sql.isEmpty ? "m.read = 0" : "(\(clause.sql)) AND m.read = 0"
+        }
+        let ids = accounts.map(\.id)
+        let mailboxes = query?.namesMailbox == true
+            ? try index.mailboxes(accountIDs: ids)
+            : Array(try index.inboxes(accountIDs: ids).values)
+        return try index.senders(by: grouping, mailboxes: mailboxes, matching: clause, limit: limit)
+    }
+
     // MARK: - Mutations
 
     /// Resolves every id to exactly one live row before anything changes.
