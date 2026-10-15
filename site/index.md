@@ -8,7 +8,7 @@ Requires macOS 14 or later and Xcode command line tools.
 
 ## Native frameworks, not screen scraping
 
-Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder, the iWork apps and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and `mac` is honest about the difference.
+Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder, the iWork apps and Shortcuts go through AppleScript and read-only Mail and Messages databases, because Apple ships no public API for them, and `mac` is honest about the difference.
 
 ## The apps
 
@@ -27,10 +27,10 @@ Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls
     mac contacts find "Sarah"
     mac contacts find "Sarah" --json
 
-**Mail.** Drafting is preferred over sending, by design.
+**Mail.** Reads Mail's own database, so every message in every account is a search away, in milliseconds. Drafting is still preferred over sending.
 
-    mac mail unread --limit 10
-    mac mail draft --to a@b.com --subject "Hi"
+    mac mail search "from:github.com newer:2d"
+    mac mail reply <id> --all --body "Thanks!"
 
 **Messages.** Read history, send texts. Exact handles only.
 
@@ -87,7 +87,7 @@ Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls
 
 ## Permissions, diagnosed
 
-macOS prompts once per capability, and `mac doctor` reports all fourteen grants (Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV, Shortcuts Events, Finder, Keynote, Pages and Numbers, and Full Disk Access) with fix steps when something is missing. No silent failures, no mystery errors.
+macOS prompts once per capability, and `mac doctor` reports all fifteen rows (Calendar, Reminders and Contacts access, Automation consent for Mail, Messages, Notes, Music, TV, Shortcuts Events, Finder, Keynote, Pages and Numbers, Full Disk Access, and whether Mail's index is readable) with fix steps when something is missing. No silent failures, no mystery errors.
 
     mac doctor
 

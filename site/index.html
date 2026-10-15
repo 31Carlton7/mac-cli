@@ -290,7 +290,7 @@
 </div>
 
 <section class="statement rail">
-  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder, the iWork apps and Shortcuts go through AppleScript and a read-only Messages database, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
+  <h2>Native frameworks, not screen scraping. <span class="rest">Calendar, Reminders and Contacts run on EventKit and Contacts: millisecond calls, typed errors, stable IDs. Mail, Messages, Notes, Music, TV, Finder, the iWork apps and Shortcuts go through AppleScript and read-only Mail and Messages databases, because Apple ships no public API for them, and <code>mac</code> is honest about the difference.</span></h2>
 </section>
 
 <section class="rail">
@@ -315,9 +315,9 @@
     </div>
     <div class="app">
       <div class="app-head"><img src="/assets/mail.png" alt=""><h3>Mail</h3></div>
-      <p>Drafting is preferred over sending, by design.</p>
-      <pre><span class="t-p">❯ </span><span class="t-cmd">mac mail unread</span> <span class="t-arg">--limit 10</span>
-<span class="t-p">❯ </span><span class="t-cmd">mac mail draft</span> <span class="t-arg">--to a@b.com --subject "Hi"</span></pre>
+      <p>Reads Mail's own database, so every message in every account is a search away, in milliseconds. Drafting is still preferred over sending.</p>
+      <pre><span class="t-p">❯ </span><span class="t-cmd">mac mail search</span> <span class="t-arg">"from:github.com newer:2d"</span>
+<span class="t-p">❯ </span><span class="t-cmd">mac mail reply</span> <span class="t-arg">&lt;id&gt; --all --body "Thanks!"</span></pre>
     </div>
     <div class="app">
       <div class="app-head"><img src="/assets/messages.png" alt=""><h3>Messages</h3></div>
@@ -441,7 +441,8 @@
 ✓ Keynote            Automation consent granted
 ✓ Pages              Automation consent granted
 ✓ Numbers            Automation consent granted</span>
-<span class="t-hi">✗ Full Disk Access   missing for Terminal</span>
+<span class="t-hi">✗ Full Disk Access   missing for Terminal
+✗ Mail index         needs Full Disk Access</span>
 <span class="t-dim">                     → System Settings › Privacy &amp; Security › Full Disk Access</span></pre></div>
   </div>
 </div>
