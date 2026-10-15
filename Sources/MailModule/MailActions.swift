@@ -41,19 +41,23 @@ public struct MailActions {
         return try await sweep(try await targetAccounts(account), scan: scan, limit: limit) { !$0.isRead }
     }
 
-    public func search(query: String, limit: Int, scan: Int? = nil, now: Date = Date()) async throws -> [EmailItem] {
+    /// With `body`, plain words also match message bodies, through the body index.
+    public func search(query: String, limit: Int, scan: Int? = nil, body: Bool = false,
+                       now: Date = Date()) async throws -> [EmailItem] {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw MacError(.badInput, "Search query cannot be empty.")
         }
         let parsed = try MailQuery(parsing: query, now: now)
         try validate(limit: limit)
         if let scan { try validate(scan: scan) }
-        if let indexed = try await fromIndex(scan: scan, { try await $0.search(parsed, limit: limit) }) {
+        if let indexed = try await fromIndex(scan: scan, {
+            try await $0.search(parsed, limit: limit, textInBody: body, notice: notice)
+        }) {
             return indexed
         }
         // Mail.app windows carry only subject and sender, so operators need the index.
-        guard let words = parsed.plainText else {
-            throw MacError(.permissionDenied, "Search operators need Mail's Envelope Index. Grant Full Disk Access to your terminal app, or run: mac doctor")
+        guard let words = parsed.plainText, !body else {
+            throw MacError(.permissionDenied, "Search operators and --body need Mail's Envelope Index. Grant Full Disk Access to your terminal app, or run: mac doctor")
         }
         return try await sweep(try await orderedAccounts(), scan: scan, limit: limit) { item in
             words.allSatisfy { Self.matches($0, item) }
@@ -77,7 +81,7 @@ public struct MailActions {
         let windowFilter = name.lowercased() == "inbox" ? Self.windowFilter(filters) : nil
         let what = "Listing a mailbox other than the inbox, or with --flagged or operators,"
         if let indexed = try await fromIndex(scan: scan, needs: windowFilter == nil ? what : nil, {
-            try await $0.list(filters, mailbox: name, account: account, limit: limit)
+            try await $0.list(filters, mailbox: name, account: account, limit: limit, notice: notice)
         }) {
             return indexed
         }
@@ -109,6 +113,20 @@ public struct MailActions {
         }
         try validate(limit: limit)
         return try await indexOnly { try await $0.contacts(matching: text, limit: limit) }
+    }
+
+    // MARK: - Body index
+
+    public func buildBodyIndex(account: String?, limit: Int?,
+                               progress: (_ done: Int, _ total: Int) -> Void = { _, _ in },
+                               shouldStop: () -> Bool = { false }) async throws -> MailBodyIndexBuild {
+        try await indexOnly {
+            try await $0.buildBodyIndex(account: account, limit: limit, progress: progress, shouldStop: shouldStop)
+        }
+    }
+
+    public func bodyIndexStatus(account: String?) async throws -> MailBodyIndexStatus {
+        try await indexOnly { try await $0.bodyIndexStatus(account: account) }
     }
 
     // MARK: - New mail
@@ -188,11 +206,8 @@ public struct MailActions {
         if name?.isEmpty == true {
             throw MacError(.badInput, "--mailbox cannot be empty.")
         }
-        guard let index else { throw Self.needsIndex(what) }
-        do {
-            return try await index.arrivals(filters, mailbox: name, account: account)
-        } catch is EnvelopeIndex.Unavailable {
-            throw Self.needsIndex(what)
+        return try await indexOnly(what) {
+            try await $0.arrivals(filters, mailbox: name, account: account, notice: notice)
         }
     }
 

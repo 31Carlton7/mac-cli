@@ -10,7 +10,7 @@ final class MailAccountRefreshTests: XCTestCase {
 
     /// A store whose account cache was filled before Mail had the Work
     /// account, as right after adding it: only asking Mail again finds it.
-    func staleStore() async throws -> IndexMailStore {
+    func staleStore(bodies: MailBodyIndex? = nil) async throws -> IndexMailStore {
         let cachePath = FileManager.default.temporaryDirectory
             .appendingPathComponent("mac-cli-cache-\(UUID().uuidString)/mail-accounts.json").path
         let directory = MailAccountDirectory(cache: MailAccountCache(storePath: AccountStoreFixture.make(), cachePath: cachePath),
@@ -21,7 +21,8 @@ final class MailAccountRefreshTests: XCTestCase {
         mail.output = EnvelopeIndexFixture.directoryOutput(EnvelopeIndexFixture.accounts.filter { $0.name != "Work" })
         _ = try await directory.accounts()
         mail.output = EnvelopeIndexFixture.directoryOutput()
-        return IndexMailStore(index: EnvelopeIndex(path: path), directory: directory, runScript: { _ in "" })
+        return IndexMailStore(index: EnvelopeIndex(path: path), directory: directory, bodies: bodies,
+                              runScript: { _ in "" })
     }
 
     func testMutationAccountAsksMail() async throws {
@@ -55,6 +56,14 @@ final class MailAccountRefreshTests: XCTestCase {
     func testWaitAccountAsksMail() async throws {
         let arrivals = try await staleStore().arrivals([], mailbox: nil, account: "work")
         XCTAssertEqual(arrivals.query.accountNames, ["Work"])
+        XCTAssertEqual(mail.calls, 2)
+    }
+
+    func testBodyIndexAccountAsksMail() async throws {
+        let bodies = MailBodyIndex(path: FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-cli-bodies-\(UUID().uuidString).sqlite").path)
+        let status = try await staleStore(bodies: bodies).bodyIndexStatus(account: "work")
+        XCTAssertEqual(status.accounts.map(\.account), ["Work"])
         XCTAssertEqual(mail.calls, 2)
     }
 }

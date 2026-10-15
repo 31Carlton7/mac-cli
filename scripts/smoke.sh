@@ -127,6 +127,12 @@ rows = json.load(sys.stdin)
 assert all("domain" in r and r["count"] >= r["unreadCount"] for r in rows), "smoke: malformed senders rows"
 '
 "$MAC" mail contacts "mac-cli-smoke-should-match-nothing" --json | grep -q '\[\]'
+# Status only: a build would read every message file, and clear would delete a real index.
+"$MAC" mail index status --json | /usr/bin/python3 -c '
+import json, sys
+status = json.load(sys.stdin)
+assert {"exists", "indexed", "behind", "watermark", "newestRowID", "fileSize"} <= set(status), "smoke: malformed index status"
+'
 # Mailbox management runs --dry-run only: it resolves real mailboxes read-only
 # and must refuse the system ones without touching anything.
 MAIL_ACCOUNT=$("$MAC" mail accounts --json | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)[0])')

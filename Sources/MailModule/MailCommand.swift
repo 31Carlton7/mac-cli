@@ -154,7 +154,7 @@ public struct MailCommand: AsyncParsableCommand {
         subcommands: [Unread.self, Search.self, List.self, Wait.self, Watch.self, Read.self, Draft.self, Send.self,
                       Reply.self, Forward.self,
                       MarkRead.self, MarkUnread.self, Flag.self, Unflag.self,
-                      Archive.self, Move.self, Copy.self, Label.self, Delete.self, Junk.self, NotJunk.self, Extract.self, Unsubscribe.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self]
+                      Archive.self, Move.self, Copy.self, Label.self, Delete.self, Junk.self, NotJunk.self, Extract.self, Unsubscribe.self, Open.self, Accounts.self, Mailboxes.self, Senders.self, Contacts.self, Index.self]
     )
 
     public init() {}
@@ -230,6 +230,7 @@ public struct MailCommand: AsyncParsableCommand {
 
                 Operators (prefix any term with - to exclude it):
                   from:  to:  cc:  subject:      match one field
+                  body:WORD  body:"a phrase"    the message body, whole words; body:invo* for a prefix
                   has:attachment
                   is:unread  is:read  is:flagged  is:priority
                   in:MAILBOX  account:NAME      in:Trash searches Trash too
@@ -238,6 +239,11 @@ public struct MailCommand: AsyncParsableCommand {
                   after: before: newer: older:  2026-10-01, yesterday, 2h, 3d, 1w
                   "quoted phrase"               one exact phrase
 
+                body: and --body read mac's own body index, which mac mail index \
+                build creates and updates. When the index has not caught up, the \
+                search still answers and says on stderr how many messages it \
+                could not check.
+
                 When the index is unreadable (see: mac doctor) it falls back to \
                 Mail.app, which matches plain words against subject and sender \
                 within the newest --scan messages of each inbox only, and cannot \
@@ -245,12 +251,15 @@ public struct MailCommand: AsyncParsableCommand {
 
                 Examples:
                   mac mail search invoice --limit 10 --json
+                  mac mail search 'body:"tracking number" newer:30d'
+                  mac mail search invoice --body
                   mac mail search "from:github.com is:unread newer:2d"
                   mac mail search 'has:attachment -category:promotions account:Work'
                 """
         )
 
         @Argument(help: "Words and operators; see the discussion above.") var query: String
+        @ArgumentParser.Flag(help: "Plain words also match message bodies, through the body index.") var body = false
         @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
         @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var accountCache: AccountCacheOptions
@@ -259,7 +268,7 @@ public struct MailCommand: AsyncParsableCommand {
         func run() async {
             await withErrorHandling(json: output.json) {
                 let items = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
-                    .search(query: query, limit: limit, scan: scan)
+                    .search(query: query, limit: limit, scan: scan, body: body)
                 Output.emit(items, json: output.json)
             }
         }
@@ -395,16 +404,22 @@ public struct MailCommand: AsyncParsableCommand {
                             fflush(stdout)
                         }
                 }
-                let signals = [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
-                    signal(number, SIG_IGN)
-                    let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-                    source.setEventHandler { watching.cancel() }
-                    source.resume()
-                    return source
-                }
+                let signals = MailCommand.onInterrupt { watching.cancel() }
                 defer { signals.forEach { $0.cancel() } }
                 try await watching.value
             }
+        }
+    }
+
+    /// Calls `handler` on Ctrl-C or SIGTERM instead of exiting, until the
+    /// returned sources are cancelled.
+    static func onInterrupt(_ handler: @escaping () -> Void) -> [DispatchSourceSignal] {
+        [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+            source.setEventHandler(handler: handler)
+            source.resume()
+            return source
         }
     }
 

@@ -53,6 +53,22 @@ final class MailCommandParsingTests: XCTestCase {
         XCTAssertNil(bare.mailbox)
     }
 
+    func testIndexCommandsAndSearchBodyParse() throws {
+        let build = try XCTUnwrap(MailCommand.parseAsRoot([
+            "index", "build", "--account", "Work", "--limit", "500", "--json",
+        ]) as? MailCommand.Index.Build)
+        XCTAssertEqual(build.account, "Work")
+        XCTAssertEqual(build.limit, 500)
+        let bare = try XCTUnwrap(MailCommand.parseAsRoot(["index", "build"]) as? MailCommand.Index.Build)
+        XCTAssertNil(bare.limit)
+        XCTAssertNoThrow(try XCTUnwrap(MailCommand.parseAsRoot(["index", "status", "--json"]) as? MailCommand.Index.Status))
+        XCTAssertNoThrow(try XCTUnwrap(MailCommand.parseAsRoot(["index", "clear"]) as? MailCommand.Index.Clear))
+        let search = try XCTUnwrap(MailCommand.parseAsRoot(["search", "invoice", "--body"]) as? MailCommand.Search)
+        XCTAssertTrue(search.body)
+        let plain = try XCTUnwrap(MailCommand.parseAsRoot(["search", "invoice"]) as? MailCommand.Search)
+        XCTAssertFalse(plain.body)
+    }
+
     func testWaitAndWatchParse() throws {
         let wait = try XCTUnwrap(MailCommand.parseAsRoot([
             "wait", "from:github.com subject:\"verification code\"", "--timeout", "5m", "--interval", "3s",

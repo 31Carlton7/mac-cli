@@ -44,12 +44,18 @@ extension MailQuery {
     ///     URLs carry the id, not the name.
     ///   - bodySearch: Fragment matching message bodies, from the body index.
     ///     Without it, `body:` is an error that names `mac mail index build`.
+    ///   - textInBody: Plain words and phrases also match the body, as `body:`.
     public func sql(accountIDs: [String: String] = [:],
-                    bodySearch: ((String) throws -> MailQuerySQL)? = nil) throws -> MailQuerySQL {
+                    bodySearch: ((String) throws -> MailQuerySQL)? = nil,
+                    textInBody: Bool = false) throws -> MailQuerySQL {
         var parts: [String] = []
         var bindings: [MailQuerySQL.Binding] = []
         for term in terms {
-            let fragment = try Self.sql(for: term.predicate, accountIDs: accountIDs, bodySearch: bodySearch)
+            var fragment = try Self.sql(for: term.predicate, accountIDs: accountIDs, bodySearch: bodySearch)
+            if textInBody, case .text(let text) = term.predicate {
+                let body = try Self.sql(for: .field(.body, text), accountIDs: accountIDs, bodySearch: bodySearch)
+                fragment = MailQuerySQL(sql: "\(fragment.sql) OR \(body.sql)", bindings: fragment.bindings + body.bindings)
+            }
             // A NULL column (no summary, no sender) must not drop the row from a negation.
             parts.append(term.negated ? "NOT IFNULL((\(fragment.sql)), 0)" : "(\(fragment.sql))")
             bindings += fragment.bindings
@@ -93,9 +99,7 @@ extension MailQuery {
             return MailQuerySQL(sql: "m.subject IN (SELECT ROWID FROM subjects WHERE subject LIKE ? ESCAPE '\\')",
                                 bindings: [.text(likePattern(text))])
         case .field(.body, let text):
-            guard let bodySearch else {
-                throw MacError(.badInput, "Body search needs the body index. Build it with: mac mail index build")
-            }
+            guard let bodySearch else { throw MailBodyIndex.missingError() }
             return try bodySearch(text)
         case .hasAttachment:
             return MailQuerySQL(sql: "EXISTS (SELECT 1 FROM attachments a WHERE a.message = m.ROWID)")

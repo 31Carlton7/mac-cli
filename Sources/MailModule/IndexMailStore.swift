@@ -55,6 +55,8 @@ public struct IndexMailStore {
     let index: EnvelopeIndex
     let directory: MailAccountDirectory
     let files: () throws -> MailMessageFiles
+    /// mac's index of message bodies, for `body:`; nil where it is never used.
+    let bodies: MailBodyIndex?
     /// Runs a Mail.app script for a mutation and returns its output.
     let runScript: (String) async throws -> String
     /// How long to wait for the index to show a change Mail reported.
@@ -62,17 +64,20 @@ public struct IndexMailStore {
 
     public init(index: EnvelopeIndex = EnvelopeIndex(),
                 directory: MailAccountDirectory = MailAccountDirectory(),
-                files: @escaping () throws -> MailMessageFiles = { try MailMessageFiles.newest() }) {
-        self.init(index: index, directory: directory, files: files,
+                files: @escaping () throws -> MailMessageFiles = { try MailMessageFiles.newest() },
+                bodies: MailBodyIndex? = MailBodyIndex()) {
+        self.init(index: index, directory: directory, files: files, bodies: bodies,
                   runScript: { try await AppleScript.run($0, targetName: "Mail") })
     }
 
     init(index: EnvelopeIndex, directory: MailAccountDirectory,
          files: @escaping () throws -> MailMessageFiles = { try MailMessageFiles.newest() },
+         bodies: MailBodyIndex? = nil,
          runScript: @escaping (String) async throws -> String, settle: TimeInterval = 2) {
         self.index = index
         self.directory = directory
         self.files = files
+        self.bodies = bodies
         self.runScript = runScript
         self.settle = settle
     }
@@ -88,34 +93,41 @@ public struct IndexMailStore {
 
     /// Every mailbox of every enabled account, plus any account the query
     /// names. Trash and Junk are left out unless the query asks for a mailbox.
-    public func search(_ query: MailQuery, limit: Int) async throws -> [EmailItem] {
+    /// With `textInBody`, plain words also match message bodies. `notice`
+    /// hears how many searched messages the body index does not cover yet.
+    public func search(_ query: MailQuery, limit: Int, textInBody: Bool = false,
+                       notice: @escaping (String) -> Void = { _ in }) async throws -> [EmailItem] {
         try index.ensureReadable()
-        return try search(query, accounts: try await directory.accounts(knowing: query.accountNames), limit: limit)
+        return try search(query, accounts: try await directory.accounts(knowing: query.accountNames), limit: limit,
+                          textInBody: textInBody, notice: notice)
     }
 
     /// The newest messages of the mailbox `mailbox` names, by the rules of
     /// `in:`, in `account` or every enabled account, that match `filters`.
     /// A name that picks no mailbox there is `notFound`, not an empty list.
     public func list(_ filters: [MailQuery.Term], mailbox: String, account: String?,
-                     limit: Int) async throws -> [EmailItem] {
+                     limit: Int, notice: @escaping (String) -> Void = { _ in }) async throws -> [EmailItem] {
         try index.ensureReadable()
         let all = try await directory.accounts(knowing: (account.map { [$0] } ?? []) + MailQuery(terms: filters).accountNames)
         let terms = filters + (try scopeTerms(mailbox: mailbox, account: account, accounts: all))
-        return try search(MailQuery(terms: terms), accounts: all, limit: limit)
+        return try search(MailQuery(terms: terms), accounts: all, limit: limit, notice: notice)
     }
 
     /// Starts noticing mail that arrives from now on, for `wait` and `watch`.
     /// The scope is `list`'s: `mailbox` (default: every inbox, unless the
     /// filters name one with `in:`) in `account` or every enabled account.
     /// This is the only Mail.app call; polling reads the index alone.
-    public func arrivals(_ filters: [MailQuery.Term], mailbox: String?,
-                         account: String?) async throws -> MailArrivals {
+    public func arrivals(_ filters: [MailQuery.Term], mailbox: String?, account: String?,
+                         notice: @escaping (String) -> Void = MailActions.printNotice) async throws -> MailArrivals {
         try index.ensureReadable()
+        if MailQuery(terms: filters).usesBody, bodies?.exists != true {
+            throw MailBodyIndex.missingError()
+        }
         let all = try await directory.accounts(knowing: (account.map { [$0] } ?? []) + MailQuery(terms: filters).accountNames)
         let name = mailbox ?? (MailQuery(terms: filters).namesMailbox ? nil : "inbox")
         let terms = filters + (try scopeTerms(mailbox: name, account: account, accounts: all))
         return MailArrivals(store: self, query: MailQuery(terms: terms), accounts: all,
-                            start: try index.newestRowID())
+                            start: try index.newestRowID(), notice: notice)
     }
 
     /// The terms `--mailbox` and `--account` add. A mailbox name that picks
@@ -156,24 +168,66 @@ public struct IndexMailStore {
         }
     }
 
-    private func search(_ query: MailQuery, accounts all: [MailAccount], limit: Int) throws -> [EmailItem] {
-        Self.items(try matches(query, accounts: all, limit: limit), accounts: all)
+    private func search(_ query: MailQuery, accounts all: [MailAccount], limit: Int, textInBody: Bool = false,
+                        notice: @escaping (String) -> Void) throws -> [EmailItem] {
+        let found = try matches(query, accounts: all, limit: limit, textInBody: textInBody) { behind in
+            if behind > 0 { notice(Self.bodiesBehind(behind)) }
+        }
+        return Self.items(found, accounts: all)
     }
 
     /// The rows `search` reads. With `after`, only rows with a higher ROWID,
-    /// in arrival order.
+    /// in arrival order. When the query reads bodies, `behind` hears how many
+    /// of the searched messages the body index does not cover.
     func matches(_ query: MailQuery, accounts all: [MailAccount], limit: Int?,
-                 after rowID: Int64? = nil) throws -> [IndexedMessage] {
+                 after rowID: Int64? = nil, textInBody: Bool = false,
+                 behind: ((Int) -> Void)? = nil) throws -> [IndexedMessage] {
+        let readsBodies = query.usesBody || (textInBody && query.hasText)
+        if readsBodies {
+            guard let bodies, bodies.exists else {
+                throw MailBodyIndex.missingError(query.usesBody ? "Body search" : "--body")
+            }
+            try index.attachBodies(bodies)
+        }
+        let scope = try searchScope(query, accounts: all)
+        let clause = try query.sql(accountIDs: scope.accountIDs, bodySearch: readsBodies ? MailBodyIndex.match : nil,
+                                   textInBody: textInBody)
+        let inboxes = try index.inboxes(accountIDs: scope.accounts.map(\.id))
+        let found = try index.search(clause, mailboxes: scope.mailboxes, inboxes: Array(inboxes.values),
+                                     limit: limit, after: rowID)
+        if readsBodies, let behind {
+            behind(try index.unindexedCount(try Self.withoutBody(query, textInBody: textInBody)
+                                                .sql(accountIDs: scope.accountIDs),
+                                            mailboxes: scope.mailboxes, after: rowID))
+        }
+        return found
+    }
+
+    /// The accounts and mailboxes `query` searches: every enabled account and
+    /// any it names, without Trash and Junk unless it names a mailbox.
+    func searchScope(_ query: MailQuery, accounts all: [MailAccount]) throws
+        -> (accounts: [MailAccount], accountIDs: [String: String], mailboxes: [IndexMailbox]) {
         let named = Set(query.accountNames.map { $0.lowercased() })
         let accounts = all.filter { $0.isEnabled || named.contains($0.name.lowercased()) }
         let accountIDs = Dictionary(all.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
-        let clause = try query.sql(accountIDs: accountIDs)
-        let ids = accounts.map(\.id)
-        let mailboxes = try index.mailboxes(accountIDs: ids)
+        let mailboxes = try index.mailboxes(accountIDs: accounts.map(\.id))
             .filter { query.namesMailbox || !$0.isTrashOrJunk }
-        let inboxes = try index.inboxes(accountIDs: ids)
-        return try index.search(clause, mailboxes: mailboxes, inboxes: Array(inboxes.values),
-                                limit: limit, after: rowID)
+        return (accounts, accountIDs, mailboxes)
+    }
+
+    /// `query` without the terms the body index answers.
+    static func withoutBody(_ query: MailQuery, textInBody: Bool = false) -> MailQuery {
+        MailQuery(terms: query.terms.filter { term in
+            switch term.predicate {
+            case .field(.body, _): return false
+            case .text: return !textInBody
+            default: return true
+            }
+        })
+    }
+
+    static func bodiesBehind(_ count: Int) -> String {
+        "note: \(count) of the searched messages are not in the body index yet, so body matches may be incomplete. Update it with: mac mail index build"
     }
 
     /// One message with its body, decoded from its file. A message copied
@@ -539,7 +593,8 @@ public struct IndexMailStore {
         (error as? MacError)?.message ?? error.localizedDescription
     }
 
-    private func scope(_ account: String?) async throws -> [MailAccount] {
+    /// Every enabled account, or the one named, which may be disabled.
+    func scope(_ account: String?) async throws -> [MailAccount] {
         guard let account else { return try await directory.accounts().filter(\.isEnabled) }
         return [try await directory.account(named: account)]
     }

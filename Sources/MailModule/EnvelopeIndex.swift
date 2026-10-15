@@ -105,6 +105,9 @@ public final class EnvelopeIndex {
     private var hasOnDeviceData = false
     /// Device and inode of the file `db` opened, to notice Mail replacing it.
     private var openedFile: (device: dev_t, inode: ino_t)?
+    /// mac's body index, attached read-only as `bodies` once `body:` needs it.
+    private var bodiesPath: String?
+    private var bodiesAttached = false
 
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -451,6 +454,162 @@ public final class EnvelopeIndex {
         return out
     }
 
+    // MARK: - Body index
+
+    /// A live message for the body index to decode.
+    struct BodyCandidate {
+        let rowID: Int64
+        let globalID: Int64
+        /// The row's own mailbox, which holds its file.
+        let mailboxURL: String
+    }
+
+    /// Attaches mac's body index as `bodies`, so `body:` fragments can name
+    /// it. The connection is read-only, so the attached file is too.
+    func attachBodies(_ bodies: MailBodyIndex) throws {
+        if bodiesPath != bodies.path {
+            if bodiesAttached, let db { try detachBodies(db) }
+            bodiesPath = bodies.path
+        }
+        try attachBodies(try connection())
+    }
+
+    private func attachBodies(_ db: OpaquePointer) throws {
+        guard let bodiesPath, !bodiesAttached else { return }
+        let stmt = try prepare(db, "ATTACH DATABASE ? AS \(MailBodyIndex.schemaName);")
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, bodiesPath, -1, Self.transient)
+        try forEachRow(db, stmt) { _ in }
+        bodiesAttached = true
+    }
+
+    private func detachBodies(_ db: OpaquePointer) throws {
+        let stmt = try prepare(db, "DETACH DATABASE \(MailBodyIndex.schemaName);")
+        defer { sqlite3_finalize(stmt) }
+        try forEachRow(db, stmt) { _ in }
+        bodiesAttached = false
+    }
+
+    /// Live messages of these mailboxes above `rowID`, lowest first.
+    func bodyCandidates(mailboxes: [IndexMailbox], after rowID: Int64, limit: Int) throws -> [BodyCandidate] {
+        guard !mailboxes.isEmpty else { return [] }
+        return try bodyCandidates(where: "m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND m.ROWID > \(rowID)",
+                                  limit: limit)
+    }
+
+    /// Live messages of these mailboxes above `rowID` that the attached body
+    /// index has not settled: never stored, or their file missing or
+    /// unreadable. Lowest first.
+    func unsettledBodyCandidates(mailboxes: [IndexMailbox], after rowID: Int64, limit: Int) throws -> [BodyCandidate] {
+        guard !mailboxes.isEmpty else { return [] }
+        guard bodiesAttached else { throw MailBodyIndex.missingError() }
+        return try bodyCandidates(where: """
+            m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND m.ROWID > \(rowID) \
+            AND NOT EXISTS (SELECT 1 FROM \(MailBodyIndex.schemaName).messages b \
+                            WHERE b.message = m.ROWID AND b.state IN (\(Self.settledStates)))
+            """, limit: limit)
+    }
+
+    /// The live messages among `rowIDs`, lowest first.
+    func bodyCandidates(rowIDs: [Int64]) throws -> [BodyCandidate] {
+        guard !rowIDs.isEmpty else { return [] }
+        return try bodyCandidates(where: "m.ROWID IN (\(Self.list(rowIDs)))", limit: rowIDs.count)
+    }
+
+    private func bodyCandidates(where condition: String, limit: Int) throws -> [BodyCandidate] {
+        let db = try connection()
+        let stmt = try prepare(db, """
+            SELECT m.ROWID, m.global_message_id, mb.url FROM messages m JOIN mailboxes mb ON mb.ROWID = m.mailbox
+            WHERE m.deleted = 0 AND \(condition) ORDER BY m.ROWID LIMIT ?;
+            """)
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, 1, Int64(limit))
+        var out: [BodyCandidate] = []
+        try forEachRow(db, stmt) { s in
+            out.append(BodyCandidate(rowID: sqlite3_column_int64(s, 0), globalID: sqlite3_column_int64(s, 1),
+                                     mailboxURL: text(s, 2)))
+        }
+        return out
+    }
+
+    /// How many live messages of these mailboxes are above `rowID`.
+    func bodyCandidateCount(mailboxes: [IndexMailbox], after rowID: Int64) throws -> Int {
+        guard !mailboxes.isEmpty else { return 0 }
+        return try count("""
+            SELECT count(*) FROM messages m
+            WHERE m.deleted = 0 AND m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND m.ROWID > \(rowID);
+            """)
+    }
+
+    /// Every live message, ROWID to `global_message_id`.
+    func liveMessages() throws -> [Int64: Int64] {
+        let db = try connection()
+        let stmt = try prepare(db, "SELECT ROWID, global_message_id FROM messages WHERE deleted = 0;")
+        defer { sqlite3_finalize(stmt) }
+        var out: [Int64: Int64] = [:]
+        try forEachRow(db, stmt) { out[sqlite3_column_int64($0, 0)] = sqlite3_column_int64($0, 1) }
+        return out
+    }
+
+    /// The highest ROWID `messages` has ever handed out. The table is
+    /// `AUTOINCREMENT`, so this never goes down while the file lives, even
+    /// when the newest rows are deleted; it is lower only in a file Mail
+    /// created afresh. Nil when the file has no sequence for the table.
+    func rowIDSequence() throws -> Int64? {
+        let db = try connection()
+        let stmt = try prepare(db, "SELECT seq FROM sqlite_sequence WHERE name = 'messages';")
+        defer { sqlite3_finalize(stmt) }
+        var seq: Int64?
+        try forEachRow(db, stmt) { seq = sqlite3_column_int64($0, 0) }
+        return seq
+    }
+
+    /// Live messages of these mailboxes, matching `query` and above `rowID`
+    /// when given, that the attached body index cannot answer for: never
+    /// built, or their file still missing or unreadable.
+    func unindexedCount(_ query: MailQuerySQL = MailQuerySQL(sql: ""), mailboxes: [IndexMailbox],
+                        after rowID: Int64? = nil) throws -> Int {
+        guard !mailboxes.isEmpty else { return 0 }
+        return try count("SELECT count(*) \(try unindexed(query, mailboxes: mailboxes, after: rowID));",
+                         bindings: query.bindings)
+    }
+
+    /// The ROWIDs `unindexedCount` counts, lowest first.
+    func unindexedRows(_ query: MailQuerySQL, mailboxes: [IndexMailbox], after rowID: Int64) throws -> [Int64] {
+        guard !mailboxes.isEmpty else { return [] }
+        let db = try connection()
+        let stmt = try prepare(db, "SELECT m.ROWID \(try unindexed(query, mailboxes: mailboxes, after: rowID)) ORDER BY m.ROWID;")
+        defer { sqlite3_finalize(stmt) }
+        query.bind(stmt)
+        var out: [Int64] = []
+        try forEachRow(db, stmt) { out.append(sqlite3_column_int64($0, 0)) }
+        return out
+    }
+
+    private func unindexed(_ query: MailQuerySQL, mailboxes: [IndexMailbox], after rowID: Int64?) throws -> String {
+        guard bodiesAttached else { throw MailBodyIndex.missingError() }
+        return """
+            FROM messages m
+            WHERE m.deleted = 0 AND m.mailbox IN (\(Self.list(mailboxes.map(\.rowID))))
+              AND m.ROWID > \(rowID ?? 0) AND (\(query.sql.isEmpty ? "1" : query.sql))
+              AND m.ROWID NOT IN (SELECT message FROM \(MailBodyIndex.schemaName).messages WHERE state IN (\(Self.settledStates)))
+            """
+    }
+
+    /// Body index states a build does not retry, as an SQL list.
+    private static let settledStates = [MailBodyIndex.State.indexed, .malformed].map { String($0.rawValue) }
+        .joined(separator: ",")
+
+    private func count(_ sql: String, bindings: [MailQuerySQL.Binding] = []) throws -> Int {
+        let db = try connection()
+        let stmt = try prepare(db, sql)
+        defer { sqlite3_finalize(stmt) }
+        MailQuerySQL(sql: sql, bindings: bindings).bind(stmt)
+        var total = 0
+        try forEachRow(db, stmt) { total = Int(sqlite3_column_int64($0, 0)) }
+        return total
+    }
+
     // MARK: - Internals
 
     /// Runs one message query; `bindings` fill the `?` placeholders in
@@ -599,6 +758,7 @@ public final class EnvelopeIndex {
         var info = stat()
         openedFile = stat(path, &info) == 0 ? (info.st_dev, info.st_ino) : nil
         db = handle
+        try attachBodies(handle)
         return handle
     }
 
@@ -606,6 +766,7 @@ public final class EnvelopeIndex {
         sqlite3_close(db)
         db = nil
         openedFile = nil
+        bodiesAttached = false
     }
 
     private static func openError(path: String) -> MacError {

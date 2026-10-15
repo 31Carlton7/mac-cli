@@ -120,6 +120,23 @@ public struct MailQuery: Equatable {
         return words
     }
 
+    /// Whether any term reads the body index.
+    public var usesBody: Bool {
+        terms.contains {
+            if case .field(.body, _) = $0.predicate { return true }
+            return false
+        }
+    }
+
+    /// Whether the query has plain words or phrases, which `search --body`
+    /// also matches against bodies.
+    public var hasText: Bool {
+        terms.contains {
+            if case .text = $0.predicate { return true }
+            return false
+        }
+    }
+
     /// Account names the query scopes to, for resolving to ids before `sql`.
     public var accountNames: [String] {
         terms.compactMap {
