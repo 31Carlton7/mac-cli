@@ -47,14 +47,20 @@ public struct IndexMailStore {
         return Self.items(messages, accounts: accounts)
     }
 
-    /// Every mailbox of every enabled account except Trash and Junk.
-    public func search(query: String, limit: Int) async throws -> [EmailItem] {
+    /// Every mailbox of every enabled account, plus any account the query
+    /// names. Trash and Junk are left out unless the query asks for a mailbox.
+    public func search(_ query: MailQuery, limit: Int) async throws -> [EmailItem] {
         try index.ensureReadable()
-        let accounts = try await scope(nil)
+        let all = try await directory.accounts(knowing: query.accountNames)
+        let named = Set(query.accountNames.map { $0.lowercased() })
+        let accounts = all.filter { $0.isEnabled || named.contains($0.name.lowercased()) }
+        let accountIDs = Dictionary(all.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
+        let clause = try query.sql(accountIDs: accountIDs)
         let ids = accounts.map(\.id)
-        let mailboxes = try index.mailboxes(accountIDs: ids).filter { !$0.isTrashOrJunk }
+        let mailboxes = try index.mailboxes(accountIDs: ids)
+            .filter { query.namesMailbox || !$0.isTrashOrJunk }
         let inboxes = try index.inboxes(accountIDs: ids)
-        let messages = try index.search(query, mailboxes: mailboxes,
+        let messages = try index.search(clause, mailboxes: mailboxes,
                                         inboxes: Array(inboxes.values), limit: limit)
         return Self.items(messages, accounts: accounts)
     }

@@ -108,22 +108,36 @@ public struct MailCommand: AsyncParsableCommand {
 
     struct Search: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Search mail by subject, sender, or Mail's summary (not body).",
+            abstract: "Search mail with words and operators like from:, is:unread, newer:2d.",
             discussion: """
-                Searches every mailbox of every enabled account except Trash and \
-                Junk, newest first, through Mail's Envelope Index. A message copied \
-                into several mailboxes is listed once.
+                Plain words match the subject, the sender's name or address, and \
+                Mail's summary; every term must match. Searches every mailbox of \
+                every enabled account except Trash and Junk, newest first, through \
+                Mail's Envelope Index. A message copied into several mailboxes is \
+                listed once.
+
+                Operators (prefix any term with - to exclude it):
+                  from:  to:  cc:  subject:      match one field
+                  has:attachment
+                  is:unread  is:read  is:flagged  is:priority
+                  in:MAILBOX  account:NAME      in:Trash searches Trash too
+                  category:primary|transactions|updates|promotions
+                  after: before: newer: older:  2026-10-01, yesterday, 2h, 3d, 1w
+                  "quoted phrase"               one exact phrase
 
                 When the index is unreadable (see: mac doctor) it falls back to \
-                Mail.app, which matches subject and sender within the newest --scan \
-                messages of each inbox only.
+                Mail.app, which matches plain words against subject and sender \
+                within the newest --scan messages of each inbox only, and cannot \
+                answer operators.
 
-                Example:
-                  mac mail search "invoice" --limit 10 --json
+                Examples:
+                  mac mail search invoice --limit 10 --json
+                  mac mail search "from:github.com is:unread newer:2d"
+                  mac mail search 'has:attachment -category:promotions account:Work'
                 """
         )
 
-        @Argument(help: "Text to match against subject, sender, and Mail's summary.") var query: String
+        @Argument(help: "Words and operators; see the discussion above.") var query: String
         @Option(help: "Maximum messages (default: 20).") var limit: Int = 20
         @Option(help: ArgumentHelp(MailCommand.fallbackScanHelp)) var scan: Int?
         @OptionGroup var accountCache: AccountCacheOptions

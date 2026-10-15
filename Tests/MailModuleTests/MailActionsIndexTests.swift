@@ -64,6 +64,36 @@ final class MailActionsIndexTests: XCTestCase {
         XCTAssertEqual(notices.count, 1)
     }
 
+    func testFallbackMatchesEveryPlainWord() async throws {
+        try lockIndex()
+        let both = try await actions().search(query: "invoice a@b", limit: 20)
+        let one = try await actions().search(query: "invoice nothing", limit: 20)
+        XCTAssertEqual(both.map(\.id), ["window-1"])
+        XCTAssertTrue(one.isEmpty)
+    }
+
+    func testOperatorsWithoutTheIndexArePermissionDenied() async throws {
+        try lockIndex()
+        do {
+            _ = try await actions().search(query: "from:billing", limit: 20)
+            XCTFail("expected permissionDenied")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .permissionDenied)
+            XCTAssertTrue(error.message.contains("mac doctor"), error.message)
+        }
+        XCTAssertTrue(store.queried.isEmpty, "no window was read for a query it cannot answer")
+    }
+
+    func testABadOperatorIsBadInputBeforeAnyRead() async {
+        do {
+            _ = try await actions().search(query: "colour:red", limit: 20)
+            XCTFail("expected badInput")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .badInput)
+        } catch { XCTFail("wrong error: \(error)") }
+        XCTAssertEqual(mail.calls, 0)
+    }
+
     func testAnUnknownAccountOnTheIndexIsNotFoundNotAFallback() async {
         do {
             _ = try await actions().unread(account: "Bogus", limit: 20)

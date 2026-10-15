@@ -47,20 +47,24 @@ public struct MailActions {
         return Self.newestFirst(collected, limit: limit)
     }
 
-    public func search(query: String, limit: Int, scan: Int? = nil) async throws -> [EmailItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
+    public func search(query: String, limit: Int, scan: Int? = nil, now: Date = Date()) async throws -> [EmailItem] {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw MacError(.badInput, "Search query cannot be empty.")
         }
+        let parsed = try MailQuery(parsing: query, now: now)
         try validate(limit: limit)
         if let scan { try validate(scan: scan) }
-        if let indexed = try await fromIndex(scan: scan, { try await $0.search(query: trimmed, limit: limit) }) {
+        if let indexed = try await fromIndex(scan: scan, { try await $0.search(parsed, limit: limit) }) {
             return indexed
+        }
+        // Mail.app windows carry only subject and sender, so operators need the index.
+        guard let words = parsed.plainText else {
+            throw MacError(.permissionDenied, "Search operators need Mail's Envelope Index. Grant Full Disk Access to your terminal app, or run: mac doctor")
         }
         var collected: [EmailItem] = []
         for name in try await orderedAccounts() {
             collected.append(contentsOf: try await store.window(account: name, scan: scan ?? Self.defaultScan)
-                .filter { Self.matches(trimmed, $0) })
+                .filter { item in words.allSatisfy { Self.matches($0, item) } })
             if collected.count >= limit { break }
         }
         return Self.newestFirst(collected, limit: limit)

@@ -187,23 +187,14 @@ public final class EnvelopeIndex {
         return try messages(where: "\(membership) AND m.read = 0", inboxIDs: ids, limit: limit)
     }
 
-    /// Messages of these mailboxes whose subject, sender name or address, or
-    /// Mail's summary contains `text`, newest first. Gmail label mailboxes
-    /// add no rows, so passing All Mail covers every label.
-    public func search(_ text: String, mailboxes: [IndexMailbox], inboxes: [IndexMailbox],
+    /// Messages of these mailboxes matching `query`, newest first. Gmail label
+    /// mailboxes add no rows, so passing All Mail covers every label.
+    public func search(_ query: MailQuerySQL, mailboxes: [IndexMailbox], inboxes: [IndexMailbox],
                        limit: Int) throws -> [IndexedMessage] {
         guard !mailboxes.isEmpty else { return [] }
-        let pattern = "%" + Self.escapeLike(text) + "%"
-        // The text tables are small next to `messages`; matching them first and
-        // then using the messages indexes is about 3x faster than joining first.
-        let match = """
-        (m.subject IN (SELECT ROWID FROM subjects WHERE subject LIKE ?1 ESCAPE '\\')
-         OR m.sender IN (SELECT ROWID FROM addresses WHERE address LIKE ?1 ESCAPE '\\' OR comment LIKE ?1 ESCAPE '\\')
-         OR m.summary IN (SELECT ROWID FROM summaries WHERE summary LIKE ?1 ESCAPE '\\'))
-        """
-        return try messages(where: "m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND \(match)",
+        return try messages(where: "m.mailbox IN (\(Self.list(mailboxes.map(\.rowID)))) AND (\(query.sql))",
                             inboxIDs: Self.list(inboxes.map(\.rowID)), limit: limit,
-                            binding: pattern)
+                            bindings: query.bindings)
     }
 
     /// Every live row carrying this Message-ID (brackets optional), in every
@@ -214,8 +205,8 @@ public final class EnvelopeIndex {
         let db = try connection()
         let inboxIDs = try allInboxIDs(db)
         return try messages(
-            where: "m.global_message_id IN (SELECT ROWID FROM message_global_data WHERE message_id_header = ?1)",
-            inboxIDs: inboxIDs, limit: nil, binding: "<\(bare)>", collapseCopies: false)
+            where: "m.global_message_id IN (SELECT ROWID FROM message_global_data WHERE message_id_header = ?)",
+            inboxIDs: inboxIDs, limit: nil, bindings: [.text("<\(bare)>")], collapseCopies: false)
     }
 
     /// The Gmail label mailboxes each row carries, keyed by row. A row with
@@ -240,17 +231,16 @@ public final class EnvelopeIndex {
 
     // MARK: - Internals
 
-    /// Runs one message query; `binding` fills `?1` in `condition`. With
-    /// `collapseCopies`, rows sharing a Message-ID collapse to the inbox row,
-    /// then the newest.
+    /// Runs one message query; `bindings` fill the `?` placeholders in
+    /// `condition`, in order. With `collapseCopies`, rows sharing a Message-ID
+    /// collapse to the inbox row, then the newest.
     private func messages(where condition: String, inboxIDs: String, limit: Int?,
-                          binding: String? = nil, collapseCopies: Bool = true) throws -> [IndexedMessage] {
+                          bindings: [MailQuerySQL.Binding] = [], collapseCopies: Bool = true) throws -> [IndexedMessage] {
         let db = try connection()
         let inInbox = inboxIDs.isEmpty ? "0" : """
         (m.mailbox IN (\(inboxIDs)) OR EXISTS (SELECT 1 FROM labels l WHERE l.message_id = m.ROWID AND l.mailbox_id IN (\(inboxIDs))))
         """
         let keep = collapseCopies ? "WHERE p.copy = 1" : ""
-        let limitIndex = binding == nil ? 1 : 2
         let sql = """
         WITH hits AS (
             SELECT m.ROWID AS id, m.global_message_id AS gid, m.date_received AS received,
@@ -276,12 +266,12 @@ public final class EnvelopeIndex {
         LEFT JOIN addresses a ON a.ROWID = m.sender
         \(keep)
         ORDER BY p.received DESC, p.id DESC
-        LIMIT ?\(limitIndex);
+        LIMIT ?;
         """
         let stmt = try prepare(db, sql)
         defer { sqlite3_finalize(stmt) }
-        if let binding { sqlite3_bind_text(stmt, 1, binding, -1, Self.transient) }
-        sqlite3_bind_int64(stmt, Int32(limitIndex), limit.map { Int64(max(0, $0)) } ?? -1)
+        let limitIndex = MailQuerySQL(sql: condition, bindings: bindings).bind(stmt)
+        sqlite3_bind_int64(stmt, limitIndex, limit.map { Int64(max(0, $0)) } ?? -1)
 
         var out: [IndexedMessage] = []
         try forEachRow(db, stmt) { s in
@@ -420,12 +410,6 @@ public final class EnvelopeIndex {
     /// ROWIDs come from the index itself, so they are interpolated as integers.
     private static func list(_ ids: [Int64]) -> String {
         ids.map(String.init).joined(separator: ",")
-    }
-
-    static func escapeLike(_ text: String) -> String {
-        text.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     /// The index stores `<id@host>`; the CLI's id is the bare form.

@@ -262,7 +262,7 @@ final class MailAccountCacheTests: XCTestCase {
         _ = try await index.unread(account: nil, limit: 20)
         XCTAssertEqual(mail.calls, 1)
         let unread = try await index.unread(account: nil, limit: 20)
-        let found = try await index.search(query: "invoice", limit: 20)
+        let found = try await index.search(MailQuery(parsing: "invoice"), limit: 20)
         let work = try await index.unread(account: "Work", limit: 20)
         XCTAssertEqual(unread.count, 4)
         XCTAssertEqual(found.count, 5)

@@ -89,6 +89,25 @@ public struct MailQuery: Equatable {
         terms = try tokens.map { try Self.term($0, now: now, calendar: calendar) }
     }
 
+    /// Whether a non-negated `in:` term picks the mailboxes to search.
+    public var namesMailbox: Bool {
+        terms.contains {
+            if case .mailbox = $0.predicate { return !$0.negated }
+            return false
+        }
+    }
+
+    /// The words and phrases to match when only subject and sender can be
+    /// read, or nil when the query uses anything else.
+    public var plainText: [String]? {
+        var words: [String] = []
+        for term in terms {
+            guard !term.negated, case .text(let text) = term.predicate else { return nil }
+            words.append(text)
+        }
+        return words
+    }
+
     /// Account names the query scopes to, for resolving to ids before `sql`.
     public var accountNames: [String] {
         terms.compactMap {

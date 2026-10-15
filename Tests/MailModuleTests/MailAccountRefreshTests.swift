@@ -30,4 +30,11 @@ final class MailAccountRefreshTests: XCTestCase {
         XCTAssertEqual(targets.map(\.message.rowID), [104])
         XCTAssertEqual(mail.calls, 2)
     }
+
+    func testAccountOperatorAsksMail() async throws {
+        let found = try await staleStore().search(MailQuery(parsing: "account:work"), limit: 10)
+        XCTAssertFalse(found.isEmpty)
+        XCTAssertEqual(Set(found.map(\.account)), ["Work"])
+        XCTAssertEqual(mail.calls, 2)
+    }
 }

@@ -212,7 +212,7 @@ final class EnvelopeIndexTests: XCTestCase {
 
     func testDeletedRowsNeverAppear() async throws {
         let unread = try await store.unread(account: "Work", limit: 20)
-        let found = try await store.search(query: "deleted invoice", limit: 20)
+        let found = try await store.search(MailQuery(parsing: "deleted invoice"), limit: 20)
         XCTAssertFalse(ids(unread).contains("deleted@example.com"))
         XCTAssertTrue(found.isEmpty)
     }
@@ -254,7 +254,7 @@ final class EnvelopeIndexTests: XCTestCase {
     // MARK: - search
 
     func testSearchMatchesSubjectSenderNameAndSummaryOutsideTheInbox() async throws {
-        let items = try await store.search(query: "invoice", limit: 20)
+        let items = try await store.search(MailQuery(parsing: "invoice"), limit: 20)
         // Subject: 101 (Gmail inbox), 102 (All Mail only), 104 (Exchange).
         // Sender name: 105 (Exchange Archive). Summary: 110. Trash (103) and
         // the deleted row (106) stay out.
@@ -264,12 +264,12 @@ final class EnvelopeIndexTests: XCTestCase {
     }
 
     func testSearchMatchesSenderAddress() async throws {
-        let items = try await store.search(query: "BILLING@example", limit: 20)
+        let items = try await store.search(MailQuery(parsing: "BILLING@example"), limit: 20)
         XCTAssertEqual(ids(items), ["inv-1042@example.com", "inv-arch@example.com"])
     }
 
     func testDuplicateMessageIDIsListedOnceFromItsInbox() async throws {
-        let items = try await store.search(query: "team sync", limit: 20)
+        let items = try await store.search(MailQuery(parsing: "team sync"), limit: 20)
         // 108 (Archive) is newer, but a read prefers the inbox copy.
         XCTAssertEqual(ids(items), ["dup@example.com"])
         XCTAssertEqual(items.first?.mailbox, "Inbox")
@@ -291,10 +291,38 @@ final class EnvelopeIndexTests: XCTestCase {
         XCTAssertEqual(row?.isInInbox, true)
     }
 
+    func testSearchOperatorsNarrowTheMatch() async throws {
+        let inbox = try await store.search(MailQuery(parsing: "from:billing in:inbox"), limit: 20)
+        XCTAssertEqual(ids(inbox), ["inv-1042@example.com"], "the Gmail inbox is a label over All Mail")
+        let work = try await store.search(MailQuery(parsing: "invoice account:work"), limit: 20)
+        XCTAssertEqual(ids(work), ["q-inv@example.com", "lunch@example.com", "hello@example.com"])
+        let elsewhere = try await store.search(MailQuery(parsing: "invoice -in:inbox"), limit: 20)
+        XCTAssertEqual(ids(elsewhere), ["inv-arch@example.com", "lunch@example.com"])
+    }
+
+    func testNamingAMailboxSearchesTrashToo() async throws {
+        let items = try await store.search(MailQuery(parsing: "invoice in:trash"), limit: 20)
+        XCTAssertEqual(ids(items), ["inv-trash@example.com"])
+    }
+
+    func testNamingADisabledAccountSearchesIt() async throws {
+        let items = try await store.search(MailQuery(parsing: "news account:old"), limit: 20)
+        XCTAssertEqual(ids(items), ["old@example.com"])
+    }
+
+    func testSearchForAnUnknownAccountIsNotFound() async {
+        do {
+            _ = try await store.search(MailQuery(parsing: "invoice account:bogus"), limit: 20)
+            XCTFail("expected notFound")
+        } catch let error as MacError {
+            XCTAssertEqual(error.code, .notFound)
+        } catch { XCTFail("wrong error: \(error)") }
+    }
+
     func testSearchTreatsLikeWildcardsLiterally() async throws {
-        let items = try await store.search(query: "100%", limit: 20)
+        let items = try await store.search(MailQuery(parsing: "100%"), limit: 20)
         XCTAssertEqual(ids(items), ["pct@example.com"])
-        let none = try await store.search(query: "_nvoice", limit: 20)
+        let none = try await store.search(MailQuery(parsing: "_nvoice"), limit: 20)
         XCTAssertTrue(none.isEmpty)
     }
 

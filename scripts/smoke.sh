@@ -57,6 +57,7 @@ CONTACT_ID=$("$MAC" contacts add --name "Mac Smoketest" --email "smoke@example.c
 echo "== mail =="
 "$MAC" mail unread --limit 3 >/dev/null
 "$MAC" mail search "mac-cli-smoke-should-match-nothing" --json | grep -q '\[\]'
+"$MAC" mail search 'subject:mac-cli-smoke-should-match-nothing newer:1d -in:inbox' --json | grep -q '\[\]'
 # An id Mail does not have exits 1 (notFound).
 rc=0; "$MAC" mail read "mac-cli-smoke-absent@example.invalid" --json 2>/dev/null || rc=$?
 [ "$rc" -eq 1 ]
