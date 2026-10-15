@@ -3,6 +3,7 @@ import ArgumentParser
 import Contacts
 import Core
 import EventKit
+import MailModule
 
 struct DoctorCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -45,6 +46,7 @@ struct DoctorCommand: AsyncParsableCommand {
             Self.automationRow("automation:Numbers", app: "Numbers",
                                bundleID: "com.apple.iWork.Numbers", commandHint: "numbers"),
             Self.fullDiskAccessRow(),
+            Self.mailIndexRow(),
         ], json: output.json)
     }
 
@@ -97,5 +99,24 @@ struct DoctorCommand: AsyncParsableCommand {
             nil
         }
         return CapabilityStatus(capability: "fullDiskAccess", status: state, fixOverride: fix)
+    }
+
+    /// Whether `mac mail` reads come from Mail's Envelope Index or fall back
+    /// to Mail.app's newest-`--scan` windows.
+    static func mailIndexRow() -> CapabilityStatus {
+        do {
+            try EnvelopeIndex().ensureReadable()
+            return CapabilityStatus(capability: "mailEnvelopeIndex", status: .granted, fixOverride: nil)
+        } catch let unavailable as EnvelopeIndex.Unavailable {
+            let isDenied = unavailable.error.code == .permissionDenied
+            let state: AuthState = isDenied ? .denied : .unknown
+            let fix = isDenied
+                ? "Grant Full Disk Access to your terminal app in System Settings > Privacy & Security > Full Disk Access (lets mac mail read Mail's Envelope Index instead of scanning Mail.app windows)."
+                : unavailable.error.message
+            return CapabilityStatus(capability: "mailEnvelopeIndex", status: state, fixOverride: fix)
+        } catch {
+            return CapabilityStatus(capability: "mailEnvelopeIndex", status: .unknown,
+                                    fixOverride: error.localizedDescription)
+        }
     }
 }
