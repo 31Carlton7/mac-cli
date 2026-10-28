@@ -244,21 +244,13 @@ public final class EnvelopeIndex {
         return out
     }
 
-    /// Unread messages per mailbox ROWID, counting a Gmail label mailbox's
-    /// messages through `labels`. Mailboxes with none are absent.
+    /// Mail's own unread count per mailbox. Mail keeps `unread_count` current
+    /// with triggers on `messages` and `labels`, Gmail labels included, and it
+    /// matched a full recount on all 58 mailboxes of a 5-account Mac.
     public func unreadCounts(mailboxes: [IndexMailbox]) throws -> [Int64: Int] {
         guard !mailboxes.isEmpty else { return [:] }
         let db = try connection()
-        let ids = Self.list(mailboxes.map(\.rowID))
-        let sql = """
-        SELECT mailbox, count(*) FROM (
-            SELECT mailbox, ROWID FROM messages WHERE read = 0 AND deleted = 0 AND mailbox IN (\(ids))
-            UNION
-            SELECT l.mailbox_id, l.message_id FROM labels l JOIN messages m ON m.ROWID = l.message_id
-            WHERE m.read = 0 AND m.deleted = 0 AND l.mailbox_id IN (\(ids))
-        ) GROUP BY mailbox;
-        """
-        let stmt = try prepare(db, sql)
+        let stmt = try prepare(db, "SELECT ROWID, unread_count FROM mailboxes WHERE ROWID IN (\(Self.list(mailboxes.map(\.rowID))));")
         defer { sqlite3_finalize(stmt) }
         var out: [Int64: Int] = [:]
         try forEachRow(db, stmt) { s in

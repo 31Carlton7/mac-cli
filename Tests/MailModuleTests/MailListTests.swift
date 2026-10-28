@@ -6,11 +6,12 @@ import Core
 /// label mailbox, Exchange's Sent Items and two empty mailboxes.
 final class MailListTests: XCTestCase {
     static let rows = EnvelopeIndexFixture.mail + """
-    INSERT INTO mailboxes (ROWID, url, total_count) VALUES
-        (11, 'imap://GM/Receipts', 2),
-        (12, 'ews://EX/Sent%20Items', 1),
-        (13, 'ews://EX/Journal', 0),
-        (14, 'imap://IM/Empty%20Project', 0);
+    INSERT INTO mailboxes (ROWID, url, total_count, unread_count) VALUES
+        (11, 'imap://GM/Receipts', 2, 1),
+        (12, 'ews://EX/Sent%20Items', 1, 0),
+        (13, 'ews://EX/Journal', 0, 0),
+        (14, 'imap://IM/Empty%20Project', 0, 0);
+    UPDATE mailboxes SET unread_count = 3 WHERE ROWID = 3;
     INSERT INTO subjects (ROWID, subject) VALUES (12, 'Receipt 7'), (13, 'Receipt 8'), (14, 'Status report');
     INSERT INTO message_global_data (ROWID, message_id, message_id_header) VALUES
         (13, 13, '<receipt-7@example.com>'), (14, 14, '<receipt-8@example.com>'), (15, 15, '<sent@example.com>');
@@ -122,10 +123,17 @@ final class MailListTests: XCTestCase {
         ])
     }
 
+    func testMailboxesReportMailsOwnUnreadCount() async throws {
+        index = EnvelopeIndex(path: EnvelopeIndexFixture.make(rows: Self.rows + "UPDATE mailboxes SET unread_count = 7 WHERE ROWID = 11;"))
+        store = IndexMailStore(index: index, directory: mail.directory)
+        let receipts = try await store.mailboxes(account: "personal", all: false).first { $0.path == "Receipts" }
+        XCTAssertEqual(receipts?.unread, 7, "Mail's stored count, not a recount of its rows")
+    }
+
     func testEmptySystemMailboxesNeedAll() async throws {
         let work = try await store.mailboxes(account: "Work", all: false)
         XCTAssertEqual(work.map(\.path), ["Inbox", "Archive", "Sent Items"])
-        XCTAssertEqual(work.map(\.unread), [2, 0, 0], "the deleted unread row is not counted")
+        XCTAssertEqual(work.map(\.unread), [2, 0, 0])
         let all = try await store.mailboxes(account: "Work", all: true)
         XCTAssertEqual(all.map(\.path), ["Inbox", "Archive", "Deleted Items", "Journal", "Sent Items"])
     }

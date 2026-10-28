@@ -74,17 +74,17 @@ enum EnvelopeIndexFixture {
     /// promotions, 104 primary, 105 promotions with an unreadable summary,
     /// 107/108 updates, 112 not categorised yet.
     static let mail = """
-    INSERT INTO mailboxes (ROWID, url, total_count, source) VALUES
-        (1, 'imap://GM/INBOX', 2, 3),
-        (2, 'imap://GM/%5BGmail%5D/Sent%20Mail', 0, 3),
-        (3, 'imap://GM/%5BGmail%5D/All%20Mail', 3, NULL),
-        (4, 'imap://GM/%5BGmail%5D/Trash', 1, NULL),
-        (5, 'ews://EX/Inbox', 4, NULL),
-        (6, 'ews://EX/Archive', 1, NULL),
-        (7, 'ews://EX/Deleted%20Items', 0, NULL),
-        (8, 'imap://IM/INBOX', 2, NULL),
-        (9, 'imap://IM/Archive', 1, NULL),
-        (10, 'imap://OLD/INBOX', 1, NULL);
+    INSERT INTO mailboxes (ROWID, url, total_count, unread_count, source) VALUES
+        (1, 'imap://GM/INBOX', 2, 1, 3),
+        (2, 'imap://GM/%5BGmail%5D/Sent%20Mail', 0, 1, 3),
+        (3, 'imap://GM/%5BGmail%5D/All%20Mail', 3, 2, NULL),
+        (4, 'imap://GM/%5BGmail%5D/Trash', 1, 1, NULL),
+        (5, 'ews://EX/Inbox', 4, 2, NULL),
+        (6, 'ews://EX/Archive', 1, 0, NULL),
+        (7, 'ews://EX/Deleted%20Items', 0, 0, NULL),
+        (8, 'imap://IM/INBOX', 2, 1, NULL),
+        (9, 'imap://IM/Archive', 1, 1, NULL),
+        (10, 'imap://OLD/INBOX', 1, 1, NULL);
     INSERT INTO subjects (ROWID, subject) VALUES
         (1, 'Invoice 1042'), (2, 'Invoice archived'), (3, 'Invoice trashed'),
         (4, 'Quarterly invoice'), (5, 'Lunch'), (6, 'Deleted invoice'),
