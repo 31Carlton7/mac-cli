@@ -321,6 +321,64 @@ final class EnvelopeIndexTests: XCTestCase {
         XCTAssertEqual(ids(items), ["inv-1042@example.com", "inv-arch@example.com"])
     }
 
+    // MARK: - Newest rows first
+
+    /// Every listing under a window so small that the shortcut, and each of
+    /// its fallbacks, decide the answer.
+    func listings(window: Int, limit: Int) async throws -> [[EmailItem]] {
+        let saved = EnvelopeIndex.candidateWindow
+        EnvelopeIndex.candidateWindow = window
+        defer { EnvelopeIndex.candidateWindow = saved }
+        var out: [[EmailItem]] = []
+        for query in ["example", "invoice", "-invoice", "in:inbox", "team sync", "account:work", "is:unread"] {
+            out.append(try await store.search(MailQuery(parsing: query), limit: limit))
+        }
+        out.append(try await store.unread(account: nil, limit: limit))
+        out.append(try await store.list([], mailbox: "inbox", account: nil, limit: limit))
+        out.append(try await store.list([], mailbox: "Archive", account: nil, limit: limit))
+        return out
+    }
+
+    func testNewestRowsAnswerLikeRankingEveryMatch() async throws {
+        for limit in 1...6 {
+            let narrow = try await listings(window: 1, limit: limit)
+            let every = try await listings(window: 1000, limit: limit)
+            XCTAssertEqual(narrow, every, "limit \(limit)")
+        }
+    }
+
+    func testAnOlderInboxCopyOutsideTheWindowIsStillPreferred() async throws {
+        let saved = EnvelopeIndex.candidateWindow
+        EnvelopeIndex.candidateWindow = 1
+        defer { EnvelopeIndex.candidateWindow = saved }
+        // dup@'s Archive copy (108) is the newest match of all, but its inbox
+        // copy (107) is older than the window, so every match must be ranked.
+        let items = try await store.search(MailQuery(parsing: "example"), limit: 1)
+        XCTAssertEqual(ids(items), ["inv-1042@example.com"])
+    }
+
+    func testAWindowFullOfCopiesStillFindsEnoughMessages() async throws {
+        // Eight copies of one message fill the window for limit 2; the second
+        // message is older than all of them.
+        let copies = (0..<8).map { "(\(300 + $0), 50, 5, NULL, 50, 1, \(1_787_980_000 + $0), 5, 0, 0, 0)" }
+        path = EnvelopeIndexFixture.make(rows: EnvelopeIndexFixture.mail + """
+            INSERT INTO subjects (ROWID, subject) VALUES (50, 'Zebra crossing');
+            INSERT INTO message_global_data (ROWID, message_id, message_id_header) VALUES
+                (50, 50, '<zebra@example.com>'), (51, 51, '<zebra-old@example.com>');
+            INSERT INTO messages (ROWID, global_message_id, sender, subject_prefix, subject, summary,
+                                  date_received, mailbox, read, flagged, deleted) VALUES
+                \(copies.joined(separator: ", ")),
+                (308, 51, 5, NULL, 50, 1, 1787900000, 5, 0, 0, 0);
+            """)
+        index = EnvelopeIndex(path: path)
+        store = IndexMailStore(index: index, directory: mail.directory)
+        let saved = EnvelopeIndex.candidateWindow
+        EnvelopeIndex.candidateWindow = 1
+        defer { EnvelopeIndex.candidateWindow = saved }
+        let items = try await store.search(MailQuery(parsing: "zebra"), limit: 2)
+        XCTAssertEqual(ids(items), ["zebra@example.com", "zebra-old@example.com"])
+    }
+
     func testDuplicateMessageIDIsListedOnceFromItsInbox() async throws {
         let items = try await store.search(MailQuery(parsing: "team sync"), limit: 20)
         // 108 (Archive) is newer, but a read prefers the inbox copy.

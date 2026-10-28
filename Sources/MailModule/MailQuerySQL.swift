@@ -119,7 +119,7 @@ extension MailQuery {
             let mailboxes = mailboxRows(named: name)
             return MailQuerySQL(sql: """
                 m.mailbox IN (\(mailboxes.sql)) \
-                OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(mailboxes.sql)))
+                OR EXISTS (SELECT 1 FROM labels l WHERE l.message_id = m.ROWID AND l.mailbox_id IN (\(mailboxes.sql)))
                 """, bindings: mailboxes.bindings + mailboxes.bindings)
         case .account(let name):
             guard let id = accountIDs[name]

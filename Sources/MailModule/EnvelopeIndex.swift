@@ -274,7 +274,9 @@ public final class EnvelopeIndex {
     public func unreadMessages(inboxes: [IndexMailbox], limit: Int) throws -> [IndexedMessage] {
         guard !inboxes.isEmpty else { return [] }
         let ids = Self.list(inboxes.map(\.rowID))
-        let membership = "(m.mailbox IN (\(ids)) OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(ids))))"
+        // Per-row EXISTS lets a newest-first scan stop early; `IN (SELECT …)`
+        // would first collect every inbox label row, 94k on one Gmail-heavy Mac.
+        let membership = "(m.mailbox IN (\(ids)) OR EXISTS (SELECT 1 FROM labels l WHERE l.message_id = m.ROWID AND l.mailbox_id IN (\(ids))))"
         return try messages(where: "\(membership) AND m.read = 0", inboxIDs: ids, limit: limit)
     }
 
@@ -612,6 +614,55 @@ public final class EnvelopeIndex {
 
     // MARK: - Internals
 
+    /// The fewest newest rows `newestRows` reads; tests shrink it.
+    static var candidateWindow = 100
+
+    /// The newest rows matching `condition` when they alone decide the newest
+    /// `limit` messages, so the copy-collapsing rank runs over a handful of
+    /// rows instead of every match: an inbox list holds tens of thousands.
+    /// That holds when the window has `limit` distinct messages and none of
+    /// them has a matching copy older than the window, which the rank could
+    /// prefer. nil means every match must be ranked.
+    private func newestRows(_ db: OpaquePointer, matching condition: String,
+                            bindings: [MailQuerySQL.Binding], limit: Int) throws -> [Int64]? {
+        let window = max(Self.candidateWindow, limit * 4)
+        let stmt = try prepare(db, """
+            SELECT m.ROWID, m.global_message_id, m.date_received FROM messages m
+            WHERE m.deleted = 0 AND \(condition)
+            ORDER BY m.date_received DESC, m.ROWID DESC LIMIT \(window + 1);
+            """)
+        defer { sqlite3_finalize(stmt) }
+        MailQuerySQL(sql: condition, bindings: bindings).bind(stmt)
+        var rows: [(id: Int64, gid: Int64?, received: Int64?)] = []
+        try forEachRow(db, stmt) { s in
+            rows.append((sqlite3_column_int64(s, 0),
+                         sqlite3_column_type(s, 1) == SQLITE_NULL ? nil : sqlite3_column_int64(s, 1),
+                         sqlite3_column_type(s, 2) == SQLITE_NULL ? nil : sqlite3_column_int64(s, 2)))
+        }
+        guard rows.count > window else { return rows.map(\.id) }
+        rows.removeLast()
+        let gids = Set(rows.compactMap(\.gid))
+        guard rows.allSatisfy({ $0.gid != nil }), gids.count >= limit,
+              let last = rows.last, let received = last.received else { return nil }
+        // The unary `+` keeps SQLite on the message-id index; the date index
+        // would walk every older message.
+        let copies = try prepare(db, """
+            SELECT m.ROWID FROM messages m
+            WHERE m.global_message_id IN (\(Self.list(Array(gids)))) AND +m.deleted = 0
+              AND (+m.date_received < \(received) OR (+m.date_received = \(received) AND m.ROWID < \(last.id)));
+            """)
+        defer { sqlite3_finalize(copies) }
+        var older: [Int64] = []
+        try forEachRow(db, copies) { older.append(sqlite3_column_int64($0, 0)) }
+        guard !older.isEmpty else { return rows.map(\.id) }
+        let matching = try prepare(db, "SELECT 1 FROM messages m WHERE m.ROWID IN (\(Self.list(older))) AND (\(condition)) LIMIT 1;")
+        defer { sqlite3_finalize(matching) }
+        MailQuerySQL(sql: condition, bindings: bindings).bind(matching)
+        var hasOlderCopy = false
+        try forEachRow(db, matching) { _ in hasOlderCopy = true }
+        return hasOlderCopy ? nil : rows.map(\.id)
+    }
+
     /// Runs one message query; `bindings` fill the `?` placeholders in
     /// `condition`, in order. With `collapseCopies`, rows sharing a Message-ID
     /// collapse to the inbox row, then the newest. Results are newest first,
@@ -620,6 +671,13 @@ public final class EnvelopeIndex {
                           bindings: [MailQuerySQL.Binding] = [], collapseCopies: Bool = true,
                           arrivalOrder: Bool = false) throws -> [IndexedMessage] {
         let db = try connection()
+        var condition = condition
+        var bindings = bindings
+        if collapseCopies, !arrivalOrder, let limit,
+           let newest = try newestRows(db, matching: condition, bindings: bindings, limit: limit) {
+            condition = newest.isEmpty ? "0" : "m.ROWID IN (\(Self.list(newest)))"
+            bindings = []
+        }
         let inInbox = inboxIDs.isEmpty ? "0" : """
         (m.mailbox IN (\(inboxIDs)) OR EXISTS (SELECT 1 FROM labels l WHERE l.message_id = m.ROWID AND l.mailbox_id IN (\(inboxIDs))))
         """
