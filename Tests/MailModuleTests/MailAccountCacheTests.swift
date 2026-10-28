@@ -272,9 +272,16 @@ final class MailAccountCacheTests: XCTestCase {
         XCTAssertNotNil(cachedUnread.accountCache.index.directory.cache)
     }
 
-    func testMutationsNeverUseTheCache() {
-        XCTAssertNil(MailCommand.uncachedIndex.directory.cache)
-        XCTAssertThrowsError(try MailCommand.parseAsRoot(["mark-read", "<m1@x>", "--no-cache"]))
+    func testWritesUseTheCacheUnlessToldNot() throws {
+        for arguments in [["mark-read", "<m1@x>"], ["archive", "<m1@x>"], ["move", "<m1@x>", "--to", "Archive"],
+                          ["label", "add", "<m1@x>", "Receipts"], ["reply", "<m1@x>"], ["forward", "<m1@x>", "--to", "a@b.com"],
+                          ["extract", "<m1@x>"], ["unsubscribe", "<m1@x>"]] {
+            XCTAssertNoThrow(try MailCommand.parseAsRoot(arguments + ["--no-cache"]), arguments.joined(separator: " "))
+        }
+        let markRead = try XCTUnwrap(try MailCommand.parseAsRoot(["mark-read", "<m1@x>"]) as? MailCommand.MarkRead)
+        XCTAssertNotNil(markRead.target.accountCache.index.directory.cache)
+        let uncached = try XCTUnwrap(try MailCommand.parseAsRoot(["mark-read", "<m1@x>", "--no-cache"]) as? MailCommand.MarkRead)
+        XCTAssertNil(uncached.target.accountCache.index.directory.cache)
     }
 
     // MARK: - Index reads

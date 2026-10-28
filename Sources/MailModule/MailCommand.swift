@@ -111,17 +111,18 @@ struct TargetOptions: ParsableArguments {
     @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
     @Option(help: "Only the copy in this mailbox (full path, e.g. Inbox or Archive), when a message is in several.") var mailbox: String?
     @Flag(help: "Print the resolved messages without changing anything.") var dryRun = false
+    @OptionGroup var accountCache: AccountCacheOptions
 
     /// `scan` reaches only mark-read and archive, which can run without the index.
     func run(_ mutation: MailMutation, scan: Int? = nil, output: OutputOptions) async {
         await Self.run(mutation, ids: ids, account: account, mailbox: mailbox, dryRun: dryRun,
-                       scan: scan, output: output)
+                       scan: scan, index: accountCache.index, output: output)
     }
 
     static func run(_ mutation: MailMutation, ids: [String], account: String?, mailbox: String?,
-                    dryRun: Bool, scan: Int? = nil, output: OutputOptions) async {
+                    dryRun: Bool, scan: Int? = nil, index: IndexMailStore, output: OutputOptions) async {
         await withErrorHandling(json: output.json) {
-            let results = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+            let results = try await MailActions(store: AppleScriptMailStore(), index: index)
                 .apply(mutation, ids: ids, account: account, mailbox: mailbox, dryRun: dryRun, scan: scan)
             let receipt = MailActionReceipt(results: results)
             Output.emit(receipt, json: output.json)
@@ -136,6 +137,7 @@ struct LabelArguments: ParsableArguments {
     @Option(help: "Only the copy in this account, when a message is in several.") var account: String?
     @Option(help: "Only the copy in this mailbox (full path), when a message is in several.") var mailbox: String?
     @Flag(help: "Print the resolved messages without changing anything.") var dryRun = false
+    @OptionGroup var accountCache: AccountCacheOptions
 
     var ids: [String] { Array(values.dropLast()) }
     var label: String { values.last ?? "" }
@@ -158,11 +160,6 @@ public struct MailCommand: AsyncParsableCommand {
     )
 
     public init() {}
-
-    /// Mutations skip the account cache: the account a write targets comes from Mail.app.
-    static var uncachedIndex: IndexMailStore {
-        IndexMailStore(directory: MailAccountDirectory(cache: nil))
-    }
 
     static func actionDiscussion(_ verb: String, extra: String = "") -> String {
         let args = extra.isEmpty ? "" : " " + extra
@@ -569,11 +566,12 @@ public struct MailCommand: AsyncParsableCommand {
         @Option(help: "Only the copy in this mailbox (full path), when a message is in several.") var mailbox: String?
         @OptionGroup var content: BodyOptions
         @ArgumentParser.Flag(help: "Print what would be composed without changing anything in Mail.") var dryRun = false
+        @OptionGroup var accountCache: AccountCacheOptions
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let receipt = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                let receipt = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
                     .respond(.reply(all: all), id: id, account: account, mailbox: mailbox,
                              content: try content.responseContent(), send: send, dryRun: dryRun)
                 Output.emit(receipt, json: output.json)
@@ -604,11 +602,12 @@ public struct MailCommand: AsyncParsableCommand {
         @Option(help: "Only the copy in this mailbox (full path), when a message is in several.") var mailbox: String?
         @OptionGroup var content: BodyOptions
         @ArgumentParser.Flag(help: "Print what would be composed without changing anything in Mail.") var dryRun = false
+        @OptionGroup var accountCache: AccountCacheOptions
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let receipt = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                let receipt = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
                     .respond(.forward(to: to, cc: cc), id: id, account: account, mailbox: mailbox,
                              content: try content.responseContent(), send: send, dryRun: dryRun)
                 Output.emit(receipt, json: output.json)
@@ -771,7 +770,7 @@ public struct MailCommand: AsyncParsableCommand {
         func run() async {
             await TargetOptions.run(.addLabel(arguments.label), ids: arguments.ids,
                                     account: arguments.account, mailbox: arguments.mailbox,
-                                    dryRun: arguments.dryRun, output: output)
+                                    dryRun: arguments.dryRun, index: arguments.accountCache.index, output: output)
         }
     }
 

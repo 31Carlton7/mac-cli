@@ -38,6 +38,7 @@ extension MailCommand {
         @ArgumentParser.Flag(help: "Verification and one-time codes.") var codes = false
         @ArgumentParser.Flag(help: "Links in the body.") var links = false
         @ArgumentParser.Flag(help: "List-Unsubscribe targets.") var unsubscribe = false
+        @OptionGroup var accountCache: AccountCacheOptions
         @OptionGroup var output: OutputOptions
 
         var parts: Set<MailExtraction.Part> {
@@ -50,7 +51,7 @@ extension MailCommand {
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let extraction = try MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                let extraction = try MailActions(store: AppleScriptMailStore(), index: accountCache.index)
                     .extract(id: id, parts: parts)
                 Output.emit(extraction, json: output.json)
             }
@@ -88,11 +89,12 @@ extension MailCommand {
         @Argument(help: "Message id from 'mac mail unread' or 'mac mail search', with or without angle brackets.") var id: String
         @ArgumentParser.Flag(help: "Act: POST the one-click request, or draft the unsubscribe email.") var yes = false
         @ArgumentParser.Flag(help: "With --yes, send a mailto: unsubscribe email instead of leaving a draft.") var send = false
+        @OptionGroup var accountCache: AccountCacheOptions
         @OptionGroup var output: OutputOptions
 
         func run() async {
             await withErrorHandling(json: output.json) {
-                let result = try await MailActions(store: AppleScriptMailStore(), index: MailCommand.uncachedIndex)
+                let result = try await MailActions(store: AppleScriptMailStore(), index: accountCache.index)
                     .unsubscribe(id: id, confirm: yes, send: send)
                 Output.emit(result, json: output.json)
                 if let failure = result.failure { throw failure }
