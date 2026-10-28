@@ -396,6 +396,22 @@ final class EnvelopeIndexTests: XCTestCase {
         XCTAssertTrue(try index.messages(withID: "deleted@example.com").isEmpty)
     }
 
+    func testMessageIDKeyIsMailsHash() {
+        XCTAssertEqual(EnvelopeIndex.messageIDKey("abc@example.com"), 3_913_198_007_828_319_666)
+        XCTAssertEqual(EnvelopeIndex.messageIDKey("CAF=xyz+1@mail.gmail.com"), -2_049_440_447_416_845_880)
+    }
+
+    func testAHashedLookupStillComparesTheHeader() throws {
+        let key = EnvelopeIndex.messageIDKey("dup@example.com")
+        // 104 forges dup@'s key under another header, as a hash collision would.
+        path = EnvelopeIndexFixture.make(rows: EnvelopeIndexFixture.mail
+            + "UPDATE messages SET message_id = \(key) WHERE ROWID IN (104, 107, 108);")
+        index = EnvelopeIndex(path: path)
+        XCTAssertEqual(try index.messages(withID: "dup@example.com").map(\.rowID), [108, 107])
+        XCTAssertEqual(try index.messages(withID: "q-inv@example.com").map(\.rowID), [104],
+                       "a row whose key does not match is still found by its header")
+    }
+
     func testMessagesWithIDSeesGmailInboxThroughItsLabel() throws {
         let row = try index.messages(withID: "inv-1042@example.com").first
         XCTAssertEqual(row?.mailbox.path, "[Gmail]/All Mail")
