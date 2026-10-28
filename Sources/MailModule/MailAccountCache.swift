@@ -32,7 +32,11 @@ public struct MailAccountCache {
         let accounts: [MailAccount]
     }
 
-    /// Hashes every row of `ZACCOUNT` and of the enabled-dataclass join table.
+    /// Hashes only the `ZACCOUNT` columns that decide Mail's ids, names and
+    /// nesting (a Gmail account's Mail name is its parent's description), and
+    /// every row of the enabled-dataclass join table. `Z_OPT`, `ZDATE` and the
+    /// credential columns change on token refreshes and whenever Mail starts,
+    /// so hashing them would send most reads to Mail.app.
     /// Core Data numbers join tables per model version (`Z_2ENABLEDDATACLASSES`),
     /// so it is found by suffix. Throws `StoreUnreadable` for anything that
     /// stops the read: no Full Disk Access, a missing file, a changed schema.
@@ -50,7 +54,7 @@ public struct MailAccountCache {
         }
         guard !joinTables.isEmpty else { throw StoreUnreadable() }
 
-        let statements = ["SELECT * FROM ZACCOUNT ORDER BY Z_PK;"]
+        let statements = ["SELECT Z_PK, ZIDENTIFIER, ZACCOUNTDESCRIPTION, ZPARENTACCOUNT, ZACCOUNTTYPE, ZUSERNAME FROM ZACCOUNT ORDER BY Z_PK;"]
             + joinTables.map { "SELECT * FROM \"\($0.replacingOccurrences(of: "\"", with: "\"\""))\" ORDER BY 1, 2;" }
         var hash = SHA256()
         for sql in statements {

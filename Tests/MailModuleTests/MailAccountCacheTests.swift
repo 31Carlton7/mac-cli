@@ -113,6 +113,28 @@ final class MailAccountCacheTests: XCTestCase {
         XCTAssertEqual(mail.calls, 2, "the new answer was stored")
     }
 
+    func testRoutineAccountStoreWritesKeepTheCache() async throws {
+        _ = try await cached.accounts()
+        AccountStoreFixture.exec(storePath, """
+            UPDATE ZACCOUNT SET Z_OPT = Z_OPT + 1, ZDATE = 812345678.5, ZMODIFICATIONID = 'next',
+                ZLASTCREDENTIALRENEWALREJECTIONDATE = 812345600, ZAUTHENTICATED = 0, ZACTIVE = 0,
+                ZWARMINGUP = 1, ZDATACLASSPROPERTIES = X'0304';
+            """)
+        _ = try await cached.accounts()
+        XCTAssertEqual(mail.calls, 1, "a token refresh or Mail starting up rewrites these columns, not the account list")
+    }
+
+    func testRenamingAParentAccountAsksMailAgain() async throws {
+        AccountStoreFixture.exec(storePath, """
+            INSERT INTO ZACCOUNT (Z_PK, Z_ENT, Z_OPT, ZACCOUNTDESCRIPTION, ZIDENTIFIER) VALUES (6, 2, 1, 'Personal', 'GOOGLE');
+            UPDATE ZACCOUNT SET ZPARENTACCOUNT = 6 WHERE ZIDENTIFIER = 'GM';
+            """)
+        _ = try await cached.accounts()
+        AccountStoreFixture.exec(storePath, "UPDATE ZACCOUNT SET ZACCOUNTDESCRIPTION = 'Gmail' WHERE Z_PK = 6;")
+        _ = try await cached.accounts()
+        XCTAssertEqual(mail.calls, 2, "Mail names a Gmail account after its parent")
+    }
+
     func testTogglingMailForAnAccountAsksMailAgain() async throws {
         _ = try await cached.accounts()
         AccountStoreFixture.exec(storePath, "DELETE FROM Z_2ENABLEDDATACLASSES WHERE Z_2ENABLEDACCOUNTS = 3;")
