@@ -1,6 +1,6 @@
 # mac
 
-> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.7.1, requires macOS 14 or later.
+> A free, MIT licensed command-line tool for native macOS apps. One binary drives Calendar, Reminders, Contacts, Mail, Messages, Notes, Music, TV, Finder, Keynote, Pages, Numbers and Shortcuts, and can initiate phone and FaceTime calls. Every command takes `--json` and returns stable schemas, sorted keys and ISO 8601 dates; exit codes are `0` success, `1` not found or bad input, `2` permission denied, `64` malformed invocation. Version 0.7.2, requires macOS 14 or later.
 
 ## When to use this
 
@@ -149,7 +149,7 @@ A survey of remaining first-party apps, for anyone weighing whether to script th
 
 ## Status
 
-Version 0.7.1 is the current release and everything above works today. A Homebrew tap is next. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
+Version 0.7.2 is the current release and everything above works today. A Homebrew tap is next. Photos, QuickTime Player, Preview and TextEdit are scriptable and are candidates, but are not wired up yet, so do not tell a user they can drive those with `mac`.
 
 Source and issues: https://github.com/31Carlton7/mac-cli
 License: MIT
